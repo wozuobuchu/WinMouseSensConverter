@@ -14,6 +14,8 @@
 
 namespace rawinput {
 
+    class LowLatencyKeyboardLifetimeGuard;
+
     class LowLatencyKeyboard final {
     public:
         struct KeyEvent {
@@ -25,227 +27,239 @@ namespace rawinput {
 
         inline static constexpr size_t kQueueCapacity = 2048;
 
-        inline static bool start_message_thread() {
-            static bool init = [] () -> bool {
-                std::promise<bool> ready_promise;
-                auto ready_future = ready_promise.get_future();
+        template <std::size_t N>
+        inline static size_t pop_events(KeyEvent (&outs)[N]) noexcept requires (N <= kQueueCapacity) {
+            return queue_.pop(outs, N);
+        }
+
+        inline static bool is_keydown(uint16_t vkey) noexcept {
+            if (vkey >= 256) return false;
+            return key_down_[vkey].load(std::memory_order_relaxed) != 0;
+        }
+
+    private:
+        friend class LowLatencyKeyboardLifetimeGuard;
+
+        inline static constexpr size_t kRawInputBatchCapacity = 64;
+
+        LowLatencyKeyboard() = delete;
+
+        inline static bool start_message_thread() noexcept {
+            static bool init = [] () ->bool {
                 try {
+                    std::promise<bool> ready_promise;
+                    auto ready_future = ready_promise.get_future();
+
                     message_thread_ = std::thread(
-                        [promise = std::move(ready_promise)] () mutable ->void {
+                        [promise = std::move(ready_promise)]() mutable noexcept ->void {
                             message_thread_proc(std::move(promise));
                         }
                     );
+
+                    const bool success = ready_future.get();
+                    if (!success && message_thread_.joinable()) {
+                        message_thread_.join();
+                    }
+                    return success;
                 } catch (...) {
+                    if (message_thread_.joinable()) {
+                        message_thread_.join();
+                    }
                     return false;
                 }
-
-                const bool success = ready_future.get();
-                if (!success) {
-                    if (message_thread_.joinable()) message_thread_.join();
-                    return false;
-                }
-
-                return true;
             } ();
             return init;
         }
 
-        inline static void stop_message_thread() noexcept {
+        inline static bool stop_message_thread() noexcept {
             static bool stop = [] () ->bool {
+
                 if (!message_thread_.joinable()) return false;
 
-                HWND hwnd = message_hwnd_.load(std::memory_order_acquire);
-                if (hwnd) PostMessageW(hwnd, WM_CLOSE, 0, 0);
+                const DWORD thread_id = message_thread_id_.load(std::memory_order_acquire);
+                if (thread_id != 0) {
+                    PostThreadMessageW(thread_id, WM_QUIT, 0, 0);
+                }
 
                 message_thread_.join();
 
                 return true;
             } ();
+            return stop;
         }
 
-        inline static bool pop_event(KeyEvent& out) noexcept {
-            return queue_.pop(out);
-        }
+        inline static uint16_t normalize_vkey(const RAWKEYBOARD& keyboard) noexcept {
+            uint16_t vkey = static_cast<uint16_t>(keyboard.VKey);
+            const uint16_t flags = static_cast<uint16_t>(keyboard.Flags);
 
-        template <std::size_t N>
-        inline static size_t pop_events(KeyEvent (&outs)[N]) noexcept requires (N == kQueueCapacity) {
-            size_t cnt = 0;
-            for (; cnt < kQueueCapacity; ++cnt) {
-                if (!queue_.pop(outs[cnt])) break;
-            }
-            return cnt;
-        }
-
-        inline static bool is_keydown(uint16_t vkey) noexcept {
-            if (vkey >= 256) return false;
-            return key_down_[vkey].load(std::memory_order_relaxed);
-        }
-
-    private:
-        friend class LowLatencyKeyboardDestructorGuard;
-
-        LowLatencyKeyboard() = default;
-        LowLatencyKeyboard(const LowLatencyKeyboard&) = delete;
-        LowLatencyKeyboard& operator=(const LowLatencyKeyboard&) = delete;
-        LowLatencyKeyboard(LowLatencyKeyboard&&) = delete;
-        LowLatencyKeyboard& operator=(LowLatencyKeyboard&&) = delete;
-        ~LowLatencyKeyboard() { stop_message_thread(); }
-
-        inline static LRESULT CALLBACK keyboard_wnd_proc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
-            (void)hwnd, (void)msg, (void)wParam, (void)lParam;
-            switch (msg) {
-                case WM_INPUT: {
-                    onRawInput(lParam);
-                    break;
-                }
-                case WM_CLOSE: {
-                    DestroyWindow(hwnd);
-                    return 0;
-                }
-                case WM_DESTROY: {
-                    PostQuitMessage(0);
-                    return 0;
-                }
-            }
-            return DefWindowProcW(hwnd, msg, wParam, lParam);
-        }
-
-        inline static bool register_raw_input(HWND hwnd) {
-            if (!hwnd) return false;
-
-            RAWINPUTDEVICE rid{};
-            rid.usUsagePage = 0x01;
-            rid.usUsage = 0x06;
-            rid.dwFlags = RIDEV_NOLEGACY | RIDEV_INPUTSINK;
-            rid.hwndTarget = hwnd;
-
-            return RegisterRawInputDevices(&rid, 1, sizeof(rid)) != FALSE;
-        }
-
-        inline static void unregister_raw_input() noexcept {
-            RAWINPUTDEVICE rid{};
-            rid.usUsagePage = 0x01;
-            rid.usUsage = 0x06;
-            rid.dwFlags = RIDEV_REMOVE;
-            rid.hwndTarget = nullptr;
-            RegisterRawInputDevices(&rid, 1, sizeof(rid));
-        }
-
-        inline static void message_thread_proc(std::promise<bool> ready) {
-            MSG msg{};
-            PeekMessageW(
-                &msg,
-                nullptr,
-                WM_USER,
-                WM_USER,
-                PM_NOREMOVE
-            );
-
-            const HINSTANCE instance = GetModuleHandleW(nullptr);
-            constexpr const wchar_t* class_name = L"LowLatencyKeyboardMessageWindow";
-
-            WNDCLASSW wc{};
-            wc.lpfnWndProc = keyboard_wnd_proc;
-            wc.hInstance = instance;
-            wc.lpszClassName = class_name;
-
-            if (!RegisterClassW(&wc) && GetLastError() != ERROR_CLASS_ALREADY_EXISTS) {
-                ready.set_value(false);
-                return;
-            }
-
-            HWND hwnd = CreateWindowExW(
-                0, class_name, L"", 0,
-                0, 0, 0, 0,
-                HWND_MESSAGE, nullptr, instance, nullptr
-            );
-
-            if (!hwnd) {
-                ready.set_value(false);
-                return;
-            }
-
-            if (!register_raw_input(hwnd)) {
-                DestroyWindow(hwnd);
-                ready.set_value(false);
-                return;
-            }
-
-            message_hwnd_.store(hwnd, std::memory_order_release);
-
-            ready.set_value(true);
-
-            while (GetMessageW(&msg, nullptr, 0, 0) > 0) {
-                DispatchMessageW(&msg);
-            }
-
-            message_hwnd_.store(nullptr, std::memory_order_release);
-
-            unregister_raw_input();
-        }
-
-        inline static uint16_t normalizeVKey(const RAWKEYBOARD& kbd) {
-            uint16_t vkey = (uint16_t)kbd.VKey;
-            const uint16_t flags = (uint16_t)kbd.Flags;
             if (vkey == VK_SHIFT) {
-                vkey = (kbd.MakeCode == 0x36) ? VK_RSHIFT : VK_LSHIFT;
+                vkey = (keyboard.MakeCode == 0x36) ? VK_RSHIFT : VK_LSHIFT;
             } else if (vkey == VK_CONTROL) {
                 vkey = (flags & RI_KEY_E0) ? VK_RCONTROL : VK_LCONTROL;
             } else if (vkey == VK_MENU) {
                 vkey = (flags & RI_KEY_E0) ? VK_RMENU : VK_LMENU;
             }
+
             return vkey;
         }
 
-        inline static void onRawInput(LPARAM lParam) {
-            RAWINPUT raw{};
-            UINT size = sizeof(raw);
+        inline static void process_raw_input(const RAWINPUT& raw_input) noexcept {
+            if (raw_input.header.dwType != RIM_TYPEKEYBOARD) return;
 
-            if (GetRawInputData((HRAWINPUT)lParam, RID_INPUT, &raw, &size, sizeof(RAWINPUTHEADER)) == (UINT)(-1)) return;
+            const RAWKEYBOARD& keyboard = raw_input.data.keyboard;
+            if (keyboard.VKey == 255) return;
 
-            if (raw.header.dwType != RIM_TYPEKEYBOARD) return;
-
-            const RAWKEYBOARD& kbd = raw.data.keyboard;
-            if (kbd.VKey == 255) return; // fake key
-
-            const uint16_t vkey = normalizeVKey(kbd);
+            const uint16_t vkey = normalize_vkey(keyboard);
             if (vkey >= 256) return;
 
-            const uint16_t scan = (uint16_t)kbd.MakeCode;
-            const uint16_t flags = (uint16_t)kbd.Flags;
-  
-            const uint8_t newDown = (flags & RI_KEY_BREAK) ? 0 : 1;
-            const uint8_t oldDown = key_down_[vkey].exchange(newDown, std::memory_order_relaxed);
+            const uint16_t flags = static_cast<uint16_t>(keyboard.Flags);
+            const uint8_t old_down = key_down_[vkey].load(std::memory_order_relaxed);
+            const uint8_t new_down = (flags & RI_KEY_BREAK) ? 0 : 1;
+            if (old_down == new_down) return;
 
-            if (oldDown == newDown) return;
+            key_down_[vkey].store(new_down, std::memory_order_relaxed);
 
-            KeyEvent ev{ vkey, scan, flags, newDown };
-            bool push_res = queue_.push(ev);
-            (void) push_res;
+            const KeyEvent event{
+                vkey,
+                static_cast<uint16_t>(keyboard.MakeCode),
+                flags,
+                new_down
+            };
+            const bool pushed = queue_.push(event);
+            (void) pushed;
+        }
+
+        inline static bool drain_raw_input_buffer(std::array<RAWINPUT, kRawInputBatchCapacity>& buffer) noexcept {
+            while (true) {
+                UINT buffer_size = static_cast<UINT>(sizeof(buffer));
+                const UINT input_count = GetRawInputBuffer(
+                    buffer.data(),
+                    &buffer_size,
+                    sizeof(RAWINPUTHEADER)
+                );
+
+                if (input_count == 0) return true;
+                if (input_count == static_cast<UINT>(-1)) return false;
+
+                PRAWINPUT current = buffer.data();
+                for (UINT index = 0; index < input_count; ++index) {
+                    process_raw_input(*current);
+
+                    constexpr ULONG_PTR alignment = alignof(RAWINPUT);
+                    const ULONG_PTR next = reinterpret_cast<ULONG_PTR>(current) + current->header.dwSize;
+                    current = reinterpret_cast<PRAWINPUT>((next + alignment - 1) & ~(alignment - 1));
+                }
+            }
+        }
+
+        inline static void message_thread_proc(std::promise<bool> ready) noexcept {
+            const HINSTANCE instance = GetModuleHandleW(nullptr);
+            constexpr const wchar_t* class_name = L"LowLatencyKeyboardBufferedMessageWindow";
+
+            WNDCLASSW window_class{};
+            window_class.lpfnWndProc = DefWindowProcW;
+            window_class.hInstance = instance;
+            window_class.lpszClassName = class_name;
+
+            if (!RegisterClassW(&window_class) && GetLastError() != ERROR_CLASS_ALREADY_EXISTS) {
+                ready.set_value(false);
+                return;
+            }
+
+            const HWND hwnd = CreateWindowExW(
+                0,
+                class_name,
+                L"",
+                0,
+                0, 0, 0, 0,
+                HWND_MESSAGE,
+                nullptr,
+                instance,
+                nullptr
+            );
+            if (!hwnd) {
+                ready.set_value(false);
+                return;
+            }
+
+            RAWINPUTDEVICE device{};
+            device.usUsagePage = 0x01;
+            device.usUsage = 0x06;
+            device.dwFlags = RIDEV_NOLEGACY | RIDEV_INPUTSINK;
+            device.hwndTarget = hwnd;
+
+            if (!RegisterRawInputDevices(&device, 1, sizeof(device))) {
+                DestroyWindow(hwnd);
+                ready.set_value(false);
+                return;
+            }
+
+            message_thread_id_.store(GetCurrentThreadId(), std::memory_order_release);
+            ready.set_value(true);
+
+            alignas(8) std::array<RAWINPUT, kRawInputBatchCapacity> buffer{};
+            MSG message{};
+            bool running = true;
+
+            while (running) {
+                const DWORD wait_result = MsgWaitForMultipleObjectsEx(
+                    0,
+                    nullptr,
+                    INFINITE,
+                    QS_ALLINPUT,
+                    MWMO_INPUTAVAILABLE
+                );
+                if (wait_result == WAIT_FAILED) break;
+                if (!drain_raw_input_buffer(buffer)) break;
+
+                while (PeekMessageW(&message, nullptr, 0, WM_INPUT - 1, PM_REMOVE) || PeekMessageW(&message, nullptr, WM_INPUT + 1, 0xFFFF, PM_REMOVE)) {
+                    if (message.message == WM_QUIT) {
+                        running = false;
+                        break;
+                    }
+                    DispatchMessageW(&message);
+                }
+            }
+
+            message_thread_id_.store(0, std::memory_order_release);
+
+            RAWINPUTDEVICE remove_device{};
+            remove_device.usUsagePage = 0x01;
+            remove_device.usUsage = 0x06;
+            remove_device.dwFlags = RIDEV_REMOVE;
+            remove_device.hwndTarget = nullptr;
+            RegisterRawInputDevices(&remove_device, 1, sizeof(remove_device));
+
+            DestroyWindow(hwnd);
         }
 
         inline static std::thread message_thread_{};
-        inline static std::atomic<HWND> message_hwnd_{ nullptr };
-
-        // SPSC queue, fixed size
+        inline static std::atomic<DWORD> message_thread_id_{ 0 };
         inline static boost::lockfree::spsc_queue<KeyEvent, boost::lockfree::capacity<kQueueCapacity>> queue_{};
-
         inline static std::array<std::atomic<uint8_t>, 256> key_down_{};
     };
 
-    class LowLatencyKeyboardDestructorGuard final {
+    class LowLatencyKeyboardLifetimeGuard final {
     public:
-        LowLatencyKeyboardDestructorGuard() {
+        LowLatencyKeyboardLifetimeGuard() noexcept {
             static bool init = [] () ->bool {
-                static LowLatencyKeyboard instance;
-                (void) instance;
+                (void)LowLatencyKeyboard::start_message_thread();
                 return true;
             } ();
+            (void) init;
+        }
+
+        ~LowLatencyKeyboardLifetimeGuard() {
+            static bool stop = [] () ->bool {
+                (void)LowLatencyKeyboard::stop_message_thread();
+                return false;
+            } ();
+            (void) stop;
         }
     };
 
-    inline LowLatencyKeyboardDestructorGuard kbd_guard;
+    inline LowLatencyKeyboardLifetimeGuard keyboard_lifetime_guard;
 
-} // namespace
+} // namespace rawinput
 
-#endif // !_LOW_LATENCY_KEYBOARD_HPP_
+#endif // LOW_LATENCY_KEYBOARD_HPP_
