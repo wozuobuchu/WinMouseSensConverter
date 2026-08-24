@@ -45,32 +45,35 @@ namespace rawinput {
                     return false;
                 }
 
-                clear();
-
                 return true;
             } ();
             return init;
         }
 
         inline static void stop_message_thread() noexcept {
-            if (!message_thread_.joinable()) return;
+            static bool stop = [] () ->bool {
+                if (!message_thread_.joinable()) return false;
 
-            HWND hwnd = message_hwnd_.load(std::memory_order_acquire);
-            if (hwnd) PostMessageW(hwnd, WM_CLOSE, 0, 0);
+                HWND hwnd = message_hwnd_.load(std::memory_order_acquire);
+                if (hwnd) PostMessageW(hwnd, WM_CLOSE, 0, 0);
 
-            message_thread_.join();
+                message_thread_.join();
+
+                return true;
+            } ();
         }
 
         inline static bool pop_event(KeyEvent& out) noexcept {
             return queue_.pop(out);
         }
 
-        inline static void clear() noexcept {
-            KeyEvent dummy{};
-            while (queue_.pop(dummy)) {}
-            for (size_t i = 0; i < 256; ++i) {
-                key_down_[i].store(0, std::memory_order_relaxed);
+        template <std::size_t N>
+        inline static size_t pop_events(KeyEvent (&outs)[N]) noexcept requires (N == kQueueCapacity) {
+            size_t cnt = 0;
+            for (; cnt < kQueueCapacity; ++cnt) {
+                if (!queue_.pop(outs[cnt])) break;
             }
+            return cnt;
         }
 
         inline static bool is_keydown(uint16_t vkey) noexcept {
@@ -78,19 +81,18 @@ namespace rawinput {
             return key_down_[vkey].load(std::memory_order_relaxed);
         }
 
-        LowLatencyKeyboard() = default;
-
-        virtual ~LowLatencyKeyboard() {
-            stop_message_thread();
-        }
-
     private:
+        friend class LowLatencyKeyboardDestructorGuard;
+
+        LowLatencyKeyboard() = default;
         LowLatencyKeyboard(const LowLatencyKeyboard&) = delete;
         LowLatencyKeyboard& operator=(const LowLatencyKeyboard&) = delete;
         LowLatencyKeyboard(LowLatencyKeyboard&&) = delete;
         LowLatencyKeyboard& operator=(LowLatencyKeyboard&&) = delete;
+        ~LowLatencyKeyboard() { stop_message_thread(); }
 
         inline static LRESULT CALLBACK keyboard_wnd_proc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
+            (void)hwnd, (void)msg, (void)wParam, (void)lParam;
             switch (msg) {
                 case WM_INPUT: {
                     onRawInput(lParam);
@@ -180,7 +182,6 @@ namespace rawinput {
             message_hwnd_.store(nullptr, std::memory_order_release);
 
             unregister_raw_input();
-            DestroyWindow(hwnd);
         }
 
         inline static uint16_t normalizeVKey(const RAWKEYBOARD& kbd) {
@@ -232,7 +233,19 @@ namespace rawinput {
         inline static std::array<std::atomic<uint8_t>, 256> key_down_{};
     };
 
-    inline LowLatencyKeyboard kbd_init;
-}
+    class LowLatencyKeyboardDestructorGuard final {
+    public:
+        LowLatencyKeyboardDestructorGuard() {
+            static bool init = [] () ->bool {
+                static LowLatencyKeyboard instance;
+                (void) instance;
+                return true;
+            } ();
+        }
+    };
+
+    inline LowLatencyKeyboardDestructorGuard kbd_guard;
+
+} // namespace
 
 #endif // !_LOW_LATENCY_KEYBOARD_HPP_
