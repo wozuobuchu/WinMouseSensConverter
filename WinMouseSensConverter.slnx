@@ -1,0 +1,7 @@
+<Solution>
+  <Configurations>
+    <Platform Name="x64" />
+    <Platform Name="x86" />
+  </Configurations>
+  <Project Path="WinMouseSensConverter/WinMouseSensConverter.vcxproj" Id="1039d453-491c-4a43-908c-0b9165231c76" />
+</Solution>
