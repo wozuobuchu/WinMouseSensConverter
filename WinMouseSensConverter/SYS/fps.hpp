@@ -1,7 +1,7 @@
-#ifndef FPS_HPP
-#define FPS_HPP
-
 #pragma once
+
+#ifndef FPS_HPP_
+#define FPS_HPP_
 
 #include <chrono>
 #include <thread>

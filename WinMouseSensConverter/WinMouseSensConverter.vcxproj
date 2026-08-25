@@ -170,6 +170,10 @@
     <Image Include="small.ico" />
     <Image Include="WinMouseSensConverter.ico" />
   </ItemGroup>
+  <ItemGroup>
+    <None Include="..\.clang-format" />
+    <None Include="..\.editorconfig" />
+  </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
   </ImportGroup>

@@ -1,41 +1,45 @@
-#ifndef _UI_HPP_
-#define _UI_HPP_
+#pragma once
+
+#ifndef UI_HPP_
+#define UI_HPP_
 
 #include "resource.hpp"
+
 #include <Windows.h>
+
 #include <CommCtrl.h>
 #include <commdlg.h>
 
 #include <algorithm>
-#include <string>
-#include <vector>
+#include <atomic>
 #include <chrono>
+#include <cmath>
 #include <cstdint>
-#include <fstream>
+#include <cstring>
+#include <exception>
 #include <format>
+#include <fstream>
+#include <functional>
 #include <iostream>
-#include <thread>
-#include <stop_token>
+#include <memory>
 #include <mutex>
 #include <shared_mutex>
-#include <functional>
-#include <memory>
-#include <cstring>
-#include <atomic>
-#include <cmath>
 #include <sstream>
-#include <exception>
+#include <stop_token>
+#include <string>
+#include <thread>
 #include <utility>
+#include <vector>
 
 #include "sync.hpp"
 
 #include "SYS/fps.hpp"
-#include "SYS/low_latency_mousemov.hpp"
 #include "SYS/low_latency_keyboard.hpp"
+#include "SYS/low_latency_mousemov.hpp"
 
 #pragma comment(lib, "Comctl32.lib")
 
-#pragma comment(linker,"\"/manifestdependency:type='win32' \
+#pragma comment(linker, "\"/manifestdependency:type='win32' \
 name='Microsoft.Windows.Common-Controls' version='6.0.0.0' \
 processorArchitecture='*' publicKeyToken='6595b64144ccf1df' language='*'\"")
 
@@ -44,7 +48,7 @@ namespace ui_args {
     inline constexpr int32_t UI_DEF_HEIGHT = 720;
     inline constexpr int32_t UI_MIN_WIDTH = 640;
     inline constexpr int32_t UI_MIN_HEIGHT = 360;
-}
+} // namespace ui_args
 
 namespace ui {
 
@@ -110,17 +114,16 @@ namespace ui {
             default: {
                 break;
             }
-
         }
 
         return DefWindowProc(hwnd, uMsg, wParam, lParam);
     }
 
     std::pair<WNDCLASSEX*, HWND> register_main_ui(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, _In_ LPSTR lpCmdLine, _In_ int nCmdShow) {
-        (void) hInstance;
-        (void) hPrevInstance;
-        (void) lpCmdLine;
-        (void) nCmdShow;
+        (void)hInstance;
+        (void)hPrevInstance;
+        (void)lpCmdLine;
+        (void)nCmdShow;
 
         INITCOMMONCONTROLSEX icex{};
         icex.dwSize = sizeof(INITCOMMONCONTROLSEX);
@@ -173,6 +176,6 @@ namespace ui {
         return ret;
     }
 
-}
+} // namespace ui
 
 #endif // !_UI_HPP_

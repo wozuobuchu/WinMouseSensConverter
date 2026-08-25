@@ -1,7 +1,7 @@
-#ifndef _AOP_HPP
-#define _AOP_HPP
-
 #pragma once
+
+#ifndef AOP_HPP_
+#define AOP_HPP_
 
 #include <chrono>
 #include <concepts>

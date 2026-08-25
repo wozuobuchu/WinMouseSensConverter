@@ -49,13 +49,13 @@ namespace rawinput {
 
         // One-shot startup; readiness is reported only after Raw Input registration succeeds.
         inline static bool start_message_thread() noexcept {
-            static bool init = [] () ->bool {
+            static bool init = []() -> bool {
                 try {
                     std::promise<bool> ready_promise;
                     auto ready_future = ready_promise.get_future();
 
                     message_thread_ = std::thread(
-                        [promise = std::move(ready_promise)]() mutable noexcept ->void {
+                        [promise = std::move(ready_promise)]() mutable noexcept -> void {
                             message_thread_proc(std::move(promise));
                         }
                     );
@@ -71,14 +71,13 @@ namespace rawinput {
                     }
                     return false;
                 }
-            } ();
+            }();
             return init;
         }
 
         // One-shot shutdown; WM_QUIT wakes the dedicated message thread before joining it.
         inline static bool stop_message_thread() noexcept {
-            static bool stop = [] () ->bool {
-
+            static bool stop = []() -> bool {
                 if (!message_thread_.joinable()) return false;
 
                 const DWORD thread_id = message_thread_id_.load(std::memory_order_acquire);
@@ -89,7 +88,7 @@ namespace rawinput {
                 message_thread_.join();
 
                 return true;
-            } ();
+            }();
             return stop;
         }
 
@@ -136,7 +135,7 @@ namespace rawinput {
 
             // A full queue drops the event, but key_down_ remains up to date.
             const bool pushed = queue_.push(event);
-            (void) pushed;
+            (void)pushed;
         }
 
         // Drain every queued RAWINPUT block
@@ -251,7 +250,7 @@ namespace rawinput {
         }
 
         inline static std::thread message_thread_{};
-        inline static std::atomic<DWORD> message_thread_id_{ 0 };
+        inline static std::atomic<DWORD> message_thread_id_{0};
 
         // The message thread is the sole producer; callers must provide one consumer.
         inline static boost::lockfree::spsc_queue<KeyEvent, boost::lockfree::capacity<kQueueCapacity>> queue_{};
@@ -262,20 +261,20 @@ namespace rawinput {
     public:
         // Start automatically during static initialization.
         LowLatencyKeyboardLifetimeGuard() noexcept {
-            static bool init = [] () ->bool {
-                (void) LowLatencyKeyboard::start_message_thread();
+            static bool init = []() -> bool {
+                (void)LowLatencyKeyboard::start_message_thread();
                 return true;
-            } ();
-            (void) init;
+            }();
+            (void)init;
         }
 
         // Stop automatically before static thread storage is destroyed.
         ~LowLatencyKeyboardLifetimeGuard() {
-            static bool stop = [] () ->bool {
-                (void) LowLatencyKeyboard::stop_message_thread();
+            static bool stop = []() -> bool {
+                (void)LowLatencyKeyboard::stop_message_thread();
                 return true;
-            } ();
-            (void) stop;
+            }();
+            (void)stop;
         }
     };
 
