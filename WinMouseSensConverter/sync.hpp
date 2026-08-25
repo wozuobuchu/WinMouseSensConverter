@@ -13,7 +13,6 @@ namespace sync {
 
 namespace public_data {
     inline uint8_t on_recording_ = 0;
-    inline uint8_t on_average_mode_ = 0;
 
     inline double accumulated_muzmov_dx = 0.0;
     inline double accumulated_muzmov_dy = 0.0;
