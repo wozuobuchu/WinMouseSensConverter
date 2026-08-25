@@ -9,7 +9,7 @@
 namespace fps {
 
     template <double Fps>
-    concept ValidFps = Fps > 1.0 && Fps <= 32767.0;
+    concept ValidFps = Fps >= 1e-2 && Fps <= 1e9;
 
     template <double MaxFps> requires ValidFps<MaxFps>
     class FpsLimiter {
