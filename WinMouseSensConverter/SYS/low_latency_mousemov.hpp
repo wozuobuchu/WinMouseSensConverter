@@ -18,14 +18,9 @@ namespace rawinput {
 
     class LowLatencyMouseMov final {
     public:
-        // Atomically clear both signed movement counters.
-        inline static void reset() noexcept {
-            packed_movement_.store(0, std::memory_order_relaxed);
-        }
-
-        // Read both axes from the same atomic snapshot without clearing them.
+        // Read both axes from the same atomic snapshot
         inline static std::pair<int32_t, int32_t> sample() noexcept {
-            const uint64_t packed = packed_movement_.load(std::memory_order_relaxed);
+            const uint64_t packed = packed_movement_.exchange(0, std::memory_order_relaxed);
             return {
                 std::bit_cast<int32_t>(static_cast<uint32_t>(packed)),
                 std::bit_cast<int32_t>(static_cast<uint32_t>(packed >> 32))
@@ -125,6 +120,7 @@ namespace rawinput {
                 PRAWINPUT current = buffer.data();
                 for (UINT index = 0; index < input_count; ++index) {
                     process_raw_input(*current);
+
                     constexpr ULONG_PTR alignment = alignof(RAWINPUT);
                     const ULONG_PTR next = reinterpret_cast<ULONG_PTR>(current) + current->header.dwSize;
                     current = reinterpret_cast<PRAWINPUT>((next + alignment - 1) & ~(alignment - 1));
@@ -217,6 +213,7 @@ namespace rawinput {
 
         inline static std::thread message_thread_{};
         inline static std::atomic<DWORD> message_thread_id_{ 0 };
+
         inline static std::atomic<uint64_t> packed_movement_{ 0 };
     };
 
@@ -225,7 +222,7 @@ namespace rawinput {
         // Start automatically during static initialization.
         LowLatencyMouseMovLifetimeGuard() noexcept {
             static bool init = [] () ->bool {
-                (void)LowLatencyMouseMov::start_message_thread();
+                (void) LowLatencyMouseMov::start_message_thread();
                 return true;
             } ();
             (void) init;
@@ -234,8 +231,8 @@ namespace rawinput {
         // Stop before static thread storage is destroyed.
         ~LowLatencyMouseMovLifetimeGuard() {
             static bool stop = [] () ->bool {
-                (void)LowLatencyMouseMov::stop_message_thread();
-                return false;
+                (void) LowLatencyMouseMov::stop_message_thread();
+                return true;
             } ();
             (void) stop;
         }

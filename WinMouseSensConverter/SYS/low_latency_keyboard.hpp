@@ -264,7 +264,7 @@ namespace rawinput {
         // Start automatically during static initialization.
         LowLatencyKeyboardLifetimeGuard() noexcept {
             static bool init = [] () ->bool {
-                (void)LowLatencyKeyboard::start_message_thread();
+                (void) LowLatencyKeyboard::start_message_thread();
                 return true;
             } ();
             (void) init;
@@ -273,8 +273,8 @@ namespace rawinput {
         // Stop automatically before static thread storage is destroyed.
         ~LowLatencyKeyboardLifetimeGuard() {
             static bool stop = [] () ->bool {
-                (void)LowLatencyKeyboard::stop_message_thread();
-                return false;
+                (void) LowLatencyKeyboard::stop_message_thread();
+                return true;
             } ();
             (void) stop;
         }
