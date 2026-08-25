@@ -50,6 +50,9 @@
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="ui.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
     <ClCompile Include="WinMouseSensConverter.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
