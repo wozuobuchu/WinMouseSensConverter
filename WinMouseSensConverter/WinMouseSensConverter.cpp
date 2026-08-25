@@ -13,6 +13,8 @@ int WINAPI WinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, _
     while (GetMessage(&msg, NULL, 0, 0) && (!sync::sts_.stop_requested())) {
         TranslateMessage(&msg);
         DispatchMessage(&msg);
+        main_loop::pull_msg_kbd();
+        main_loop::pull_msg_mouse();
     }
 
     sync::sts_.request_stop();

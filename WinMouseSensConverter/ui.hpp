@@ -31,12 +31,6 @@
 #include <utility>
 #include <vector>
 
-#include "sync.hpp"
-
-#include "SYS/fps.hpp"
-#include "SYS/low_latency_keyboard.hpp"
-#include "SYS/low_latency_mousemov.hpp"
-
 #pragma comment(lib, "Comctl32.lib")
 
 #pragma comment(linker, "\"/manifestdependency:type='win32' \

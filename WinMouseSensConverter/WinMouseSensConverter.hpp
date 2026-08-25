@@ -1,4 +1,58 @@
 #pragma once
 
 #include "Resource.hpp"
+
+#include <Windows.h>
+
+#include <cstdint>
+#include <functional>
+#include <memory>
+#include <unordered_map>
+#include <utility>
+
+#include "SYS/aop.hpp"
+#include "SYS/fps.hpp"
+#include "SYS/low_latency_keyboard.hpp"
+#include "SYS/low_latency_mousemov.hpp"
+
+#include "sync.hpp"
+
 #include "ui.hpp"
+
+namespace main_loop {
+
+    inline static void pull_msg_kbd() {
+        // Keyboard shortcut function
+        static std::unordered_map<uint16_t, std::function<void()>> kbd_shortcut_func_table = {
+            // Start/Stop record
+            {static_cast<uint16_t>(VK_F1), []() noexcept -> void { public_data::on_recording_ = ~public_data::on_recording_; }},
+            // Switch average Mode
+            {static_cast<uint16_t>('M'), []() noexcept -> void { public_data::on_average_mode_ = ~public_data::on_average_mode_; }},
+        };
+
+        // Pull keyboard shortcut event
+        static constexpr size_t kque_size = 1024;
+        static rawinput::LowLatencyKeyboard::KeyEvent kque[kque_size];
+        size_t n = rawinput::LowLatencyKeyboard::pop_events<kque_size>(kque);
+        for (size_t i = 0; i < n; ++i) {
+            rawinput::LowLatencyKeyboard::KeyEvent ev = kque[i];
+            auto it = kbd_shortcut_func_table.find(ev.vkey);
+            if (it != kbd_shortcut_func_table.end()) {
+                // Run shortcut function
+                it->second();
+            }
+        }
+    }
+
+    inline static void pull_msg_mouse() {
+        // Cache last bool state
+        static uint8_t cached_on_recording_ = 0;
+        static uint8_t cached_on_average_mode_ = 0;
+
+        // Pull mouse movement delta xy
+        auto [dx, dy] = rawinput::LowLatencyMouseMov::sample();
+
+
+    }
+
+} // namespace main_loop
