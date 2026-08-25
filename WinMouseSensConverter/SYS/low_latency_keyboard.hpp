@@ -141,6 +141,8 @@ namespace rawinput {
 
         // Drain every queued RAWINPUT block
         inline static bool drain_raw_input_buffer(std::array<RAWINPUT, kRawInputBatchCapacity>& buffer) noexcept {
+            using QWORD = ULONGLONG; // Required by the x64 RAWINPUT_ALIGN macro.
+
             while (true) {
                 UINT buffer_size = static_cast<UINT>(sizeof(buffer));
                 const UINT input_count = GetRawInputBuffer(
@@ -155,10 +157,7 @@ namespace rawinput {
                 PRAWINPUT current = buffer.data();
                 for (UINT index = 0; index < input_count; ++index) {
                     process_raw_input(*current);
-
-                    constexpr ULONG_PTR alignment = alignof(RAWINPUT);
-                    const ULONG_PTR next = reinterpret_cast<ULONG_PTR>(current) + current->header.dwSize;
-                    current = reinterpret_cast<PRAWINPUT>((next + alignment - 1) & ~(alignment - 1));
+                    current = NEXTRAWINPUTBLOCK(current);
                 }
             }
         }

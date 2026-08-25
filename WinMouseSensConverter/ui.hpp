@@ -156,7 +156,7 @@ namespace ui {
             TEXT("WinMouseSensConverter"),
             WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN,
             CW_USEDEFAULT, CW_USEDEFAULT,
-            1920, 1080,
+            ui_args::UI_DEF_WIDTH, ui_args::UI_DEF_HEIGHT,
             NULL,
             NULL,
             hInstance,
