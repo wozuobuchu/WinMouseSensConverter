@@ -29,8 +29,8 @@
 
 #include "sync.hpp"
 
-#include "SYS/aop.hpp"
 #include "SYS/fps.hpp"
+#include "SYS/low_latency_mousemov.hpp"
 #include "SYS/low_latency_keyboard.hpp"
 
 #pragma comment(lib, "Comctl32.lib")

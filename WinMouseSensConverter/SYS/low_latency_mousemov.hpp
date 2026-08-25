@@ -1,53 +1,45 @@
 #pragma once
 
-#ifndef LOW_LATENCY_KEYBOARD_HPP_
-#define LOW_LATENCY_KEYBOARD_HPP_
+#ifndef LOW_LATENCY_MOUSEMOV_HPP_
+#define LOW_LATENCY_MOUSEMOV_HPP_
 
 #include <Windows.h>
 #include <array>
 #include <atomic>
+#include <bit>
 #include <cstdint>
 #include <future>
 #include <thread>
-
-#include <boost/lockfree/spsc_queue.hpp>
+#include <utility>
 
 namespace rawinput {
 
-    class LowLatencyKeyboardLifetimeGuard;
+    class LowLatencyMouseMovLifetimeGuard;
 
-    class LowLatencyKeyboard final {
+    class LowLatencyMouseMov final {
     public:
-        struct KeyEvent {
-            uint16_t vkey = 0;
-            uint16_t scancode = 0;
-            uint16_t flags = 0;
-            uint16_t down = 0;
-        };
-
-        inline static constexpr size_t kQueueCapacity = 2048;
-
-        // Batch-only consumer API; the queue still requires a single consumer thread.
-        template <std::size_t N>
-        inline static size_t pop_events(KeyEvent (&outs)[N]) noexcept requires (N <= kQueueCapacity) {
-            return queue_.pop(outs, N);
+        // Atomically clear both signed movement counters.
+        inline static void reset() noexcept {
+            packed_movement_.store(0, std::memory_order_relaxed);
         }
 
-        // Returns a lock-free snapshot of the latest processed key state.
-        inline static bool is_keydown(uint16_t vkey) noexcept {
-            if (vkey >= 256) return false;
-            return key_down_[vkey].load(std::memory_order_relaxed) != 0;
+        // Read both axes from the same atomic snapshot without clearing them.
+        inline static std::pair<int32_t, int32_t> sample() noexcept {
+            const uint64_t packed = packed_movement_.load(std::memory_order_relaxed);
+            return {
+                std::bit_cast<int32_t>(static_cast<uint32_t>(packed)),
+                std::bit_cast<int32_t>(static_cast<uint32_t>(packed >> 32))
+            };
         }
 
     private:
-        friend class LowLatencyKeyboardLifetimeGuard;
+        friend class LowLatencyMouseMovLifetimeGuard;
 
-        // Larger bursts are handled by repeatedly draining this fixed-size buffer.
         inline static constexpr size_t kRawInputBatchCapacity = 64;
 
-        LowLatencyKeyboard() = delete;
+        LowLatencyMouseMov() = delete;
 
-        // One-shot startup; readiness is reported only after Raw Input registration succeeds.
+        // One-shot startup; readiness is reported after Raw Input registration.
         inline static bool start_message_thread() noexcept {
             static bool init = [] () ->bool {
                 try {
@@ -55,7 +47,7 @@ namespace rawinput {
                     auto ready_future = ready_promise.get_future();
 
                     message_thread_ = std::thread(
-                        [promise = std::move(ready_promise)]() mutable noexcept ->void {
+                        [promise = std::move(ready_promise)] () mutable noexcept ->void {
                             message_thread_proc(std::move(promise));
                         }
                     );
@@ -75,10 +67,9 @@ namespace rawinput {
             return init;
         }
 
-        // One-shot shutdown; WM_QUIT wakes the dedicated message thread before joining it.
+        // One-shot shutdown; WM_QUIT wakes the dedicated message thread.
         inline static bool stop_message_thread() noexcept {
             static bool stop = [] () ->bool {
-
                 if (!message_thread_.joinable()) return false;
 
                 const DWORD thread_id = message_thread_id_.load(std::memory_order_acquire);
@@ -87,59 +78,38 @@ namespace rawinput {
                 }
 
                 message_thread_.join();
-
                 return true;
             } ();
             return stop;
         }
 
-        // Split generic modifier keys into their left/right virtual-key variants.
-        inline static uint16_t normalize_vkey(const RAWKEYBOARD& keyboard) noexcept {
-            uint16_t vkey = static_cast<uint16_t>(keyboard.VKey);
-            const uint16_t flags = static_cast<uint16_t>(keyboard.Flags);
-
-            if (vkey == VK_SHIFT) {
-                vkey = (keyboard.MakeCode == 0x36) ? VK_RSHIFT : VK_LSHIFT;
-            } else if (vkey == VK_CONTROL) {
-                vkey = (flags & RI_KEY_E0) ? VK_RCONTROL : VK_LCONTROL;
-            } else if (vkey == VK_MENU) {
-                vkey = (flags & RI_KEY_E0) ? VK_RMENU : VK_LMENU;
-            }
-
-            return vkey;
-        }
-
         inline static void process_raw_input(const RAWINPUT& raw_input) noexcept {
-            if (raw_input.header.dwType != RIM_TYPEKEYBOARD) return;
+            constexpr auto cas_mov = [] (int32_t delta_x, int32_t delta_y) noexcept ->void {
+                uint64_t expected = packed_movement_.load(std::memory_order_relaxed);
 
-            const RAWKEYBOARD& keyboard = raw_input.data.keyboard;
-            if (keyboard.VKey == 255) return;
+                while (true) {
+                    const uint32_t old_x = static_cast<uint32_t>(expected);
+                    const uint32_t old_y = static_cast<uint32_t>(expected >> 32);
+                    const uint32_t new_x = old_x + static_cast<uint32_t>(delta_x);
+                    const uint32_t new_y = old_y + static_cast<uint32_t>(delta_y);
+                    const uint64_t desired = static_cast<uint64_t>(new_x) | (static_cast<uint64_t>(new_y) << 32);
 
-            const uint16_t vkey = normalize_vkey(keyboard);
-            if (vkey >= 256) return;
-
-            const uint16_t flags = static_cast<uint16_t>(keyboard.Flags);
-            const uint8_t old_down = key_down_[vkey].load(std::memory_order_relaxed);
-            const uint8_t new_down = (flags & RI_KEY_BREAK) ? 0 : 1;
-
-            // Suppress hardware/OS repeats while preserving the latest key state.
-            if (old_down == new_down) return;
-
-            key_down_[vkey].store(new_down, std::memory_order_relaxed);
-
-            const KeyEvent event{
-                vkey,
-                static_cast<uint16_t>(keyboard.MakeCode),
-                flags,
-                new_down
+                    if (packed_movement_.compare_exchange_weak(expected, desired, std::memory_order_relaxed, std::memory_order_relaxed)) {
+                        return;
+                    }
+                }
             };
 
-            // A full queue drops the event, but key_down_ remains up to date.
-            const bool pushed = queue_.push(event);
-            (void) pushed;
+            if (raw_input.header.dwType != RIM_TYPEMOUSE) return;
+
+            const RAWMOUSE& mouse = raw_input.data.mouse;
+            if ((mouse.usFlags & MOUSE_MOVE_ABSOLUTE) != 0) return;
+            if (mouse.lLastX == 0 && mouse.lLastY == 0) return;
+
+            cas_mov(static_cast<int32_t>(mouse.lLastX), static_cast<int32_t>(mouse.lLastY));
         }
 
-        // Drain every queued RAWINPUT block
+        // Drain all queued mouse packets into a fixed-size aligned buffer.
         inline static bool drain_raw_input_buffer(std::array<RAWINPUT, kRawInputBatchCapacity>& buffer) noexcept {
             while (true) {
                 UINT buffer_size = static_cast<UINT>(sizeof(buffer));
@@ -155,7 +125,6 @@ namespace rawinput {
                 PRAWINPUT current = buffer.data();
                 for (UINT index = 0; index < input_count; ++index) {
                     process_raw_input(*current);
-
                     constexpr ULONG_PTR alignment = alignof(RAWINPUT);
                     const ULONG_PTR next = reinterpret_cast<ULONG_PTR>(current) + current->header.dwSize;
                     current = reinterpret_cast<PRAWINPUT>((next + alignment - 1) & ~(alignment - 1));
@@ -165,10 +134,9 @@ namespace rawinput {
 
         inline static void message_thread_proc(std::promise<bool> ready) noexcept {
             const HINSTANCE instance = GetModuleHandleW(nullptr);
-            constexpr const wchar_t* class_name = L"LowLatencyKeyboardBufferedMessageWindow";
+            constexpr const wchar_t* class_name = L"LowLatencyMouseMovBufferedMessageWindow";
 
             WNDCLASSW window_class{};
-            // The window is only a Raw Input target; WM_INPUT is never dispatched to it.
             window_class.lpfnWndProc = DefWindowProcW;
             window_class.hInstance = instance;
             window_class.lpszClassName = class_name;
@@ -196,9 +164,9 @@ namespace rawinput {
 
             RAWINPUTDEVICE device{};
             device.usUsagePage = 0x01;
-            device.usUsage = 0x06;
-            // Receive keyboard input in the background and suppress legacy key messages.
-            device.dwFlags = RIDEV_NOLEGACY | RIDEV_INPUTSINK;
+            device.usUsage = 0x02;
+            // Keep legacy mouse messages while receiving background Raw Input.
+            device.dwFlags = RIDEV_INPUTSINK;
             device.hwndTarget = hwnd;
 
             if (!RegisterRawInputDevices(&device, 1, sizeof(device))) {
@@ -207,17 +175,14 @@ namespace rawinput {
                 return;
             }
 
-            // Publish the thread ID only after its message queue and registration are ready.
             message_thread_id_.store(GetCurrentThreadId(), std::memory_order_release);
             ready.set_value(true);
 
-            // Eight-byte base alignment also satisfies the WOW64 buffered-input requirement.
             alignas(8) std::array<RAWINPUT, kRawInputBatchCapacity> buffer{};
             MSG message{};
             bool running = true;
 
             while (running) {
-                // Wake for queued input without removing the pending WM_INPUT messages.
                 const DWORD wait_result = MsgWaitForMultipleObjectsEx(
                     0,
                     nullptr,
@@ -228,7 +193,7 @@ namespace rawinput {
                 if (wait_result == WAIT_FAILED) break;
                 if (!drain_raw_input_buffer(buffer)) break;
 
-                // Dispatch control messages while deliberately leaving WM_INPUT to the buffer API.
+                // Leave WM_INPUT for the buffered API and dispatch control messages.
                 while (PeekMessageW(&message, nullptr, 0, WM_INPUT - 1, PM_REMOVE) || PeekMessageW(&message, nullptr, WM_INPUT + 1, 0xFFFF, PM_REMOVE)) {
                     if (message.message == WM_QUIT) {
                         running = false;
@@ -238,12 +203,11 @@ namespace rawinput {
                 }
             }
 
-            // Stop accepting shutdown posts before unregistering and destroying the target window.
             message_thread_id_.store(0, std::memory_order_release);
 
             RAWINPUTDEVICE remove_device{};
             remove_device.usUsagePage = 0x01;
-            remove_device.usUsage = 0x06;
+            remove_device.usUsage = 0x02;
             remove_device.dwFlags = RIDEV_REMOVE;
             remove_device.hwndTarget = nullptr;
             RegisterRawInputDevices(&remove_device, 1, sizeof(remove_device));
@@ -253,35 +217,32 @@ namespace rawinput {
 
         inline static std::thread message_thread_{};
         inline static std::atomic<DWORD> message_thread_id_{ 0 };
-
-        // The message thread is the sole producer; callers must provide one consumer.
-        inline static boost::lockfree::spsc_queue<KeyEvent, boost::lockfree::capacity<kQueueCapacity>> queue_{};
-        inline static std::array<std::atomic<uint8_t>, 256> key_down_{};
+        inline static std::atomic<uint64_t> packed_movement_{ 0 };
     };
 
-    class LowLatencyKeyboardLifetimeGuard final {
+    class LowLatencyMouseMovLifetimeGuard final {
     public:
         // Start automatically during static initialization.
-        LowLatencyKeyboardLifetimeGuard() noexcept {
+        LowLatencyMouseMovLifetimeGuard() noexcept {
             static bool init = [] () ->bool {
-                (void)LowLatencyKeyboard::start_message_thread();
+                (void)LowLatencyMouseMov::start_message_thread();
                 return true;
             } ();
             (void) init;
         }
 
-        // Stop automatically before static thread storage is destroyed.
-        ~LowLatencyKeyboardLifetimeGuard() {
+        // Stop before static thread storage is destroyed.
+        ~LowLatencyMouseMovLifetimeGuard() {
             static bool stop = [] () ->bool {
-                (void)LowLatencyKeyboard::stop_message_thread();
+                (void)LowLatencyMouseMov::stop_message_thread();
                 return false;
             } ();
             (void) stop;
         }
     };
 
-    inline LowLatencyKeyboardLifetimeGuard keyboard_lifetime_guard;
+    inline LowLatencyMouseMovLifetimeGuard mousemov_lifetime_guard;
 
 } // namespace rawinput
 
-#endif // LOW_LATENCY_KEYBOARD_HPP_
+#endif // LOW_LATENCY_MOUSEMOV_HPP_

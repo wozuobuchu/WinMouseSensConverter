@@ -45,6 +45,9 @@
     <ClInclude Include="SYS\low_latency_keyboard.hpp">
       <Filter>头文件\SYS</Filter>
     </ClInclude>
+    <ClInclude Include="SYS\low_latency_mousemov.hpp">
+      <Filter>头文件\SYS</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="WinMouseSensConverter.cpp">

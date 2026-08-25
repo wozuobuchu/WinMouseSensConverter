@@ -155,6 +155,7 @@
     <ClInclude Include="SYS\aop.hpp" />
     <ClInclude Include="SYS\fps.hpp" />
     <ClInclude Include="SYS\low_latency_keyboard.hpp" />
+    <ClInclude Include="SYS\low_latency_mousemov.hpp" />
     <ClInclude Include="targetver.hpp" />
     <ClInclude Include="ui.hpp" />
     <ClInclude Include="WinMouseSensConverter.hpp" />
