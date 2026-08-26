@@ -73,6 +73,7 @@
   <ItemDefinitionGroup>
     <Link>
       <AdditionalDependencies>d2d1.lib;dwrite.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <UACExecutionLevel>RequireAdministrator</UACExecutionLevel>
     </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
@@ -173,6 +174,9 @@
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="WinMouseSensConverter.rc" />
+  </ItemGroup>
+  <ItemGroup>
+    <Manifest Include="WinMouseSensConverter.manifest" />
   </ItemGroup>
   <ItemGroup>
     <Image Include="small.ico" />

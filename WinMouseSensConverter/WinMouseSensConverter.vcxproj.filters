@@ -63,6 +63,11 @@
     </ResourceCompile>
   </ItemGroup>
   <ItemGroup>
+    <Manifest Include="WinMouseSensConverter.manifest">
+      <Filter>资源文件</Filter>
+    </Manifest>
+  </ItemGroup>
+  <ItemGroup>
     <Image Include="small.ico">
       <Filter>资源文件</Filter>
     </Image>

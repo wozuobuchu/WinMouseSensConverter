@@ -33,6 +33,9 @@ namespace main_loop {
                 public_data::accumulated_muzmov_dx = 0.0;
                 public_data::accumulated_muzmov_dy = 0.0;
             }
+
+            const UINT notification_sound = public_data::on_recording_ != 0 ? MB_ICONASTERISK : MB_ICONHAND;
+            (void)MessageBeep(notification_sound);
             changed = true;
         }
 
