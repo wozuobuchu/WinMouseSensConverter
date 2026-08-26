@@ -95,6 +95,8 @@ namespace {
 
     struct UiState {
         HWND hwnd = nullptr;
+        HWND about_dialog = nullptr;
+        HWND instruction_dialog = nullptr;
         HMENU root_menu = nullptr;
         bool owned_by_window = false;
         bool in_size_move = false;
@@ -532,6 +534,117 @@ namespace {
         DrawMenuBar(state.hwnd);
     }
 
+    enum class HelpDialogKind : uint8_t {
+        about,
+        instruction,
+    };
+
+    HWND& dialog_slot(UiState& state, HelpDialogKind kind) noexcept {
+        return kind == HelpDialogKind::about ? state.about_dialog : state.instruction_dialog;
+    }
+
+    void center_dialog_on_owner(HWND dialog, HWND owner) noexcept {
+        RECT dialog_rect{};
+        RECT owner_rect{};
+        if (!GetWindowRect(dialog, &dialog_rect) || !GetWindowRect(owner, &owner_rect)) return;
+
+        const LONG width = dialog_rect.right - dialog_rect.left;
+        const LONG height = dialog_rect.bottom - dialog_rect.top;
+        LONG x = owner_rect.left + ((owner_rect.right - owner_rect.left) - width) / 2;
+        LONG y = owner_rect.top + ((owner_rect.bottom - owner_rect.top) - height) / 2;
+
+        MONITORINFO monitor_info{};
+        monitor_info.cbSize = sizeof(monitor_info);
+        const HMONITOR monitor = MonitorFromWindow(owner, MONITOR_DEFAULTTONEAREST);
+        if (monitor != nullptr && GetMonitorInfoW(monitor, &monitor_info)) {
+            const LONG maximum_x = std::max(monitor_info.rcWork.left, monitor_info.rcWork.right - width);
+            const LONG maximum_y = std::max(monitor_info.rcWork.top, monitor_info.rcWork.bottom - height);
+            x = std::clamp(x, monitor_info.rcWork.left, maximum_x);
+            y = std::clamp(y, monitor_info.rcWork.top, maximum_y);
+        }
+
+        SetWindowPos(dialog, nullptr, x, y, 0, 0, SWP_NOACTIVATE | SWP_NOSIZE | SWP_NOZORDER);
+    }
+
+    INT_PTR help_dialog_proc(HWND dialog, UINT message, WPARAM wparam, LPARAM lparam, HelpDialogKind kind) noexcept {
+        UiState* state = reinterpret_cast<UiState*>(GetWindowLongPtrW(dialog, DWLP_USER));
+
+        switch (message) {
+            case WM_INITDIALOG: {
+                state = reinterpret_cast<UiState*>(lparam);
+                SetWindowLongPtrW(dialog, DWLP_USER, reinterpret_cast<LONG_PTR>(state));
+
+                const HINSTANCE instance = reinterpret_cast<HINSTANCE>(GetWindowLongPtrW(dialog, GWLP_HINSTANCE));
+                const HICON large_icon = LoadIconW(instance, MAKEINTRESOURCEW(IDI_WINMOUSESENSCONVERTER));
+                const HICON small_icon = LoadIconW(instance, MAKEINTRESOURCEW(IDI_SMALL));
+                SendMessageW(dialog, WM_SETICON, ICON_BIG, reinterpret_cast<LPARAM>(large_icon));
+                SendMessageW(dialog, WM_SETICON, ICON_SMALL, reinterpret_cast<LPARAM>(small_icon));
+
+                if (state != nullptr) center_dialog_on_owner(dialog, state->hwnd);
+                return TRUE;
+            }
+
+            case WM_COMMAND:
+                if (LOWORD(wparam) == IDOK || LOWORD(wparam) == IDCANCEL) {
+                    DestroyWindow(dialog);
+                    return TRUE;
+                }
+                break;
+
+            case WM_CLOSE:
+                DestroyWindow(dialog);
+                return TRUE;
+
+            case WM_NCDESTROY:
+                SetWindowLongPtrW(dialog, DWLP_USER, 0);
+                if (state != nullptr) {
+                    HWND& slot = dialog_slot(*state, kind);
+                    if (slot == dialog) slot = nullptr;
+                }
+                break;
+
+            default:
+                break;
+        }
+
+        return FALSE;
+    }
+
+    INT_PTR CALLBACK about_dialog_proc(HWND dialog, UINT message, WPARAM wparam, LPARAM lparam) noexcept {
+        return help_dialog_proc(dialog, message, wparam, lparam, HelpDialogKind::about);
+    }
+
+    INT_PTR CALLBACK instruction_dialog_proc(HWND dialog, UINT message, WPARAM wparam, LPARAM lparam) noexcept {
+        return help_dialog_proc(dialog, message, wparam, lparam, HelpDialogKind::instruction);
+    }
+
+    void show_modeless_dialog(UiState& state, int resource_id, HWND& slot, DLGPROC procedure) noexcept {
+        if (slot != nullptr && IsWindow(slot)) {
+            ShowWindow(slot, IsIconic(slot) ? SW_RESTORE : SW_SHOWNORMAL);
+            SetForegroundWindow(slot);
+            return;
+        }
+
+        slot = CreateDialogParamW(
+            reinterpret_cast<HINSTANCE>(GetWindowLongPtrW(state.hwnd, GWLP_HINSTANCE)),
+            MAKEINTRESOURCEW(resource_id),
+            state.hwnd,
+            procedure,
+            reinterpret_cast<LPARAM>(&state)
+        );
+        if (slot != nullptr) ShowWindow(slot, SW_SHOWNORMAL);
+    }
+
+    void close_modeless_dialog(HWND& dialog) noexcept {
+        if (dialog != nullptr && IsWindow(dialog)) DestroyWindow(dialog);
+        dialog = nullptr;
+    }
+
+    void close_help_dialogs(UiState& state) noexcept {
+        close_modeless_dialog(state.about_dialog);
+        close_modeless_dialog(state.instruction_dialog);
+    }
+
     bool handle_menu_command(UiState& state, UINT command) noexcept {
         for (const DpiMenuEntry& entry : kDpiMenuEntries) {
             if (entry.command == command) {
@@ -559,7 +672,10 @@ namespace {
 
         switch (command) {
             case kCommandAbout:
+                show_modeless_dialog(state, IDD_ABOUTBOX, state.about_dialog, about_dialog_proc);
+                return true;
             case kCommandInstruction:
+                show_modeless_dialog(state, IDD_INSTRUCTION, state.instruction_dialog, instruction_dialog_proc);
                 return true;
             case kCommandExit:
                 SendMessageW(state.hwnd, WM_CLOSE, 0, 0);
@@ -670,10 +786,12 @@ namespace {
             }
 
             case WM_CLOSE:
+                if (state != nullptr) close_help_dialogs(*state);
                 DestroyWindow(hwnd);
                 return 0;
 
             case WM_DESTROY:
+                if (state != nullptr) close_help_dialogs(*state);
                 KillTimer(hwnd, kInputPollTimer);
                 sync::sts_.request_stop();
                 PostQuitMessage(0);
@@ -761,6 +879,19 @@ namespace ui {
         } catch (...) {
             return nullptr;
         }
+    }
+
+    bool preprocess_modeless_dialog_message(HWND main_window, MSG& message) noexcept {
+        if (main_window == nullptr || !IsWindow(main_window)) return false;
+
+        UiState* state = reinterpret_cast<UiState*>(GetWindowLongPtrW(main_window, GWLP_USERDATA));
+        if (state == nullptr) return false;
+
+        const std::array<HWND, 2> dialogs{state->about_dialog, state->instruction_dialog};
+        for (HWND dialog : dialogs) {
+            if (dialog != nullptr && IsWindow(dialog) && IsDialogMessageW(dialog, &message)) return true;
+        }
+        return false;
     }
 
     void request_redraw(HWND hwnd) noexcept {

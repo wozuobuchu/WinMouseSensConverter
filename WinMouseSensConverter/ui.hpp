@@ -17,6 +17,9 @@ namespace ui {
     // Creates the application's main window. The window owns its UI resources.
     HWND create_main_window(HINSTANCE instance) noexcept;
 
+    // Routes keyboard navigation to any open modeless dialog.
+    bool preprocess_modeless_dialog_message(HWND main_window, MSG& message) noexcept;
+
     // Invalidates the client area without erasing the Direct2D back buffer.
     void request_redraw(HWND hwnd) noexcept;
 

@@ -28,8 +28,10 @@ int WINAPI WinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, _
             break;
         }
 
-        TranslateMessage(&msg);
-        DispatchMessageW(&msg);
+        if (!ui::preprocess_modeless_dialog_message(hwnd, msg)) {
+            TranslateMessage(&msg);
+            DispatchMessageW(&msg);
+        }
 
         // Attribute the pending movement to the state that was active before
         // processing a new F1 key-down event at this polling boundary.
