@@ -54,6 +54,7 @@ vcpkg integrate install
 
 - Preserve the dedicated Raw Input message threads and their single-producer/single-consumer queue design.
 - Never perform blocking dialogs, waits, file/network operations, or thread joins in menu handlers or paint paths.
+- Do not perform or request redraws independently from UI event handlers. Events that change visible UI state, including system paint events, must only set `UiState::redraw_dirty = true`; keep actual rendering centralized in the timer-gated end-of-main-loop path.
 - Keep help windows modeless and route their messages through `ui::preprocess_modeless_dialog_message`.
 - Keep resource scripts UTF-8 and retain `#pragma code_page(65001)`.
 - Validate relevant changes with both Debug and Release x64 builds; do not require x86 validation.

@@ -195,8 +195,8 @@ namespace rawinput {
             RAWINPUTDEVICE device{};
             device.usUsagePage = 0x01;
             device.usUsage = 0x06;
-            // Receive keyboard input in the background and suppress legacy key messages.
-            device.dwFlags = RIDEV_NOLEGACY | RIDEV_INPUTSINK;
+            // Keep legacy keyboard messages while receiving background Raw Input.
+            device.dwFlags = RIDEV_INPUTSINK;
             device.hwndTarget = hwnd;
 
             if (!RegisterRawInputDevices(&device, 1, sizeof(device))) {
