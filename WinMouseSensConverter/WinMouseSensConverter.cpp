@@ -40,8 +40,10 @@ int WINAPI WinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, _
             DispatchMessageW(&msg);
         }
 
-        // Processing a new F1 key-down event at this polling boundary.
-        bool changed = main_loop::pull_msg_kbd() || main_loop::pull_msg_mouse();
+        // Apply new F1 state transitions before attributing the pending mouse snapshot.
+        const bool keyboard_changed = main_loop::pull_msg_kbd();
+        const bool mouse_changed = main_loop::pull_msg_mouse();
+        const bool changed = keyboard_changed || mouse_changed;
 
         // Redraw the UI only on the UI timer tick, and only if the content has changed since the last redraw.
         ui::finish_main_loop_iteration(hwnd, msg, changed);

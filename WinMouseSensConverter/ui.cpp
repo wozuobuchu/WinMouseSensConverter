@@ -549,6 +549,9 @@ namespace {
     }
 
     void update_menu_selection(UiState& state) noexcept {
+        const HMENU root_menu = GetMenu(state.hwnd);
+        if (root_menu == nullptr) return;
+
         UINT unit_command = kCommandUnitInch;
         for (const UnitMenuEntry& entry : kUnitMenuEntries) {
             if (entry.unit == state.unit) {
@@ -557,8 +560,8 @@ namespace {
             }
         }
 
-        CheckMenuRadioItem(state.root_menu, kCommandDpiFirst, kCommandDpiLast, state.reference_dpi_command, MF_BYCOMMAND);
-        CheckMenuRadioItem(state.root_menu, kCommandUnitFirst, kCommandUnitLast, unit_command, MF_BYCOMMAND);
+        CheckMenuRadioItem(root_menu, kCommandDpiFirst, kCommandDpiLast, state.reference_dpi_command, MF_BYCOMMAND);
+        CheckMenuRadioItem(root_menu, kCommandUnitFirst, kCommandUnitLast, unit_command, MF_BYCOMMAND);
     }
 
     enum class HelpDialogKind : uint8_t {
@@ -966,10 +969,13 @@ namespace ui {
     }
 
     HWND create_main_window(HINSTANCE instance) noexcept {
+        std::unique_ptr<UiState> state;
+        HWND hwnd = nullptr;
+
         try {
             if (!register_window_class(instance)) return nullptr;
 
-            auto state = std::make_unique<UiState>();
+            state = std::make_unique<UiState>();
             if (FAILED(initialize_device_independent_resources(*state))) {
                 show_startup_rendering_error();
                 return nullptr;
@@ -985,7 +991,7 @@ namespace ui {
             constexpr DWORD extended_style = 0;
             if (!AdjustWindowRectExForDpi(&window_rect, style, TRUE, extended_style, dpi)) return nullptr;
 
-            HWND hwnd = CreateWindowExW(
+            hwnd = CreateWindowExW(
                 extended_style,
                 kWindowClassName,
                 kWindowTitle,
@@ -995,16 +1001,24 @@ namespace ui {
                 window_rect.right - window_rect.left,
                 window_rect.bottom - window_rect.top,
                 nullptr,
-                state->root_menu,
+                nullptr,
                 instance,
                 state.get()
             );
             if (hwnd == nullptr) return nullptr;
 
+            if (!SetMenu(hwnd, state->root_menu)) {
+                DestroyWindow(hwnd);
+                return nullptr;
+            }
+
+            // SetMenu transfers menu lifetime to the window. Keep only non-owning access through GetMenu.
+            state->root_menu = nullptr;
             state->owned_by_window = true;
             state.release();
             return hwnd;
         } catch (...) {
+            if (hwnd != nullptr && IsWindow(hwnd)) DestroyWindow(hwnd);
             return nullptr;
         }
     }

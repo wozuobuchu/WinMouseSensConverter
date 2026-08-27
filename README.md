@@ -144,9 +144,9 @@ This guarantee concerns the application's concurrent accumulation path. It does 
 
 #### Keyboard control and measurement boundaries
 
-The keyboard thread also uses a message-only Raw Input target, registered with `RIDEV_INPUTSINK | RIDEV_NOLEGACY`. It normalizes left/right modifier keys, suppresses repeated state transitions, and sends key events through a single-producer/single-consumer Boost.Lockfree queue with a capacity of 2048 events. The main thread consumes the queue and reacts only to `F1` key-down transitions.
+The keyboard thread also uses a message-only Raw Input target, registered with `RIDEV_INPUTSINK` so it receives background Raw Input without suppressing normal legacy keyboard messages. It normalizes left/right modifier keys, suppresses repeated state transitions, and sends key events through a single-producer/single-consumer Boost.Lockfree queue with a capacity of 2048 events. The main thread consumes the queue and reacts only to `F1` key-down transitions.
 
-At each UI polling boundary, pending mouse movement is sampled before new `F1` events are applied. This attributes pending movement to the recording state that was active before the toggle. Starting then clears the accumulated measurement; stopping preserves the movement sampled for the recording that just ended. Because keyboard and mouse are independent Raw Input streams rather than one timestamp-merged stream, the operator should still avoid moving the mouse at the exact instant `F1` is pressed.
+At each UI polling boundary, new `F1` events are applied before pending mouse movement is sampled. Starting clears the accumulated measurement and then attributes the pending mouse snapshot to the new recording; stopping turns recording off before that pending snapshot is drained and discarded. Because keyboard and mouse are independent Raw Input streams rather than one timestamp-merged stream, the operator should still avoid moving the mouse at the exact instant `F1` is pressed.
 
 ### Architecture
 
@@ -446,9 +446,9 @@ Windows 将 `RAWMOUSE::lLastX` 和 `lLastY` 定义为 X/Y 方向的有符号位�
 
 #### 键盘控制与测量边界
 
-键盘线程也使用 message-only Raw Input 目标，并以 `RIDEV_INPUTSINK | RIDEV_NOLEGACY` 注册。它会区分左右修饰键、抑制重复状态转换，再通过容量为 2048 的 Boost.Lockfree 单生产者/单消费者队列把按键事件发送给主线程。主线程消费队列，但只响应 `F1` 按下事件。
+键盘线程也使用 message-only Raw Input 目标，并以 `RIDEV_INPUTSINK` 注册，从而在不抑制普通传统键盘消息的同时接收后台 Raw Input。它会区分左右修饰键、抑制重复状态转换，再通过容量为 2048 的 Boost.Lockfree 单生产者/单消费者队列把按键事件发送给主线程。主线程消费队列，但只响应 `F1` 按下事件。
 
-在每次 UI 轮询边界，程序会先提取待处理鼠标位移，再应用新的 `F1` 事件。这样，待处理移动会归属于切换前的记录状态：开始记录随后会清空累计值；停止记录则会保留刚刚结束的记录所采集到的移动。由于键盘和鼠标是两个独立 Raw Input 数据流，而不是合并时间戳后的统一事件流，实际操作时仍应避免在按下 `F1` 的同一瞬间移动鼠标。
+在每次 UI 轮询边界，程序会先应用新的 `F1` 事件，再提取待处理鼠标位移。开始记录会先清空累计值，再把待处理鼠标快照计入新记录；停止记录会先关闭记录，随后提取并丢弃该待处理快照。由于键盘和鼠标是两个独立 Raw Input 数据流，而不是合并时间戳后的统一事件流，实际操作时仍应避免在按下 `F1` 的同一瞬间移动鼠标。
 
 ### 架构
 
