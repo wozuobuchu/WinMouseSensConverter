@@ -11,8 +11,11 @@
 #include <array>
 #include <cstdint>
 #include <cwchar>
+#include <iterator>
 #include <limits>
 #include <memory>
+#include <optional>
+#include <string_view>
 #include <utility>
 
 namespace {
@@ -38,7 +41,8 @@ namespace {
     constexpr UINT kCommandDpi1600 = 1004;
     constexpr UINT kCommandDpi3200 = 1005;
     constexpr UINT kCommandDpi10000 = 1006;
-    constexpr UINT kCommandDpiLast = 1006;
+    constexpr UINT kCommandDpiCustom = 1007;
+    constexpr UINT kCommandDpiLast = 1007;
 
     constexpr UINT kCommandUnitFirst = 1100;
     constexpr UINT kCommandUnitRaw = 1100;
@@ -97,6 +101,7 @@ namespace {
         HWND hwnd = nullptr;
         HWND about_dialog = nullptr;
         HWND instruction_dialog = nullptr;
+        HWND custom_dpi_dialog = nullptr;
         HMENU root_menu = nullptr;
         bool owned_by_window = false;
         bool in_size_move = false;
@@ -105,6 +110,7 @@ namespace {
         UINT dpi = USER_DEFAULT_SCREEN_DPI;
 
         int reference_dpi = 800;
+        UINT reference_dpi_command = kCommandDpi800;
         Unit unit = Unit::inch;
 
         ComPtr<ID2D1Factory> d2d_factory;
@@ -190,6 +196,24 @@ namespace {
         return value > -0.0005 && value < 0.0005 ? 0.0 : value;
     }
 
+    constexpr std::optional<int> parse_reference_dpi(std::wstring_view text) noexcept {
+        if (text.empty() || text.size() > 6) return std::nullopt;
+
+        int value = 0;
+        for (const wchar_t character : text) {
+            if (character < L'0' || character > L'9') return std::nullopt;
+            value = value * 10 + static_cast<int>(character - L'0');
+        }
+
+        if (value < 1 || value > 999999) return std::nullopt;
+        return value;
+    }
+
+    constexpr bool parses_reference_dpi_as(std::wstring_view text, int expected) noexcept {
+        const std::optional<int> parsed = parse_reference_dpi(text);
+        return parsed.has_value() && *parsed == expected;
+    }
+
     static_assert(convert_distance(800.0, 800, Unit::raw) == 800.0);
     static_assert(convert_distance(800.0, 800, Unit::inch) == 1.0);
     static_assert(convert_distance(800.0, 800, Unit::mm) == 25.4);
@@ -198,6 +222,16 @@ namespace {
     static_assert(convert_distance(800.0, 800, Unit::m) == 0.0254);
     static_assert(convert_distance(-800.0, 800, Unit::inch) == -1.0);
     static_assert(normalize_display_value(-0.00049) == 0.0);
+    static_assert(parses_reference_dpi_as(L"1", 1));
+    static_assert(parses_reference_dpi_as(L"999999", 999999));
+    static_assert(parses_reference_dpi_as(L"000800", 800));
+    static_assert(!parse_reference_dpi(L"").has_value());
+    static_assert(!parse_reference_dpi(L"0").has_value());
+    static_assert(!parse_reference_dpi(L"1000000").has_value());
+    static_assert(!parse_reference_dpi(L"-1").has_value());
+    static_assert(!parse_reference_dpi(L" 800").has_value());
+    static_assert(!parse_reference_dpi(L"dpi").has_value());
+    static_assert(!parse_reference_dpi(L"8x0").has_value());
 
     HRESULT create_text_format(IDWriteFactory* factory, float font_size, DWRITE_FONT_WEIGHT weight, DWRITE_TEXT_ALIGNMENT alignment, DWRITE_PARAGRAPH_ALIGNMENT paragraph_alignment, IDWriteTextFormat** format) noexcept {
         HRESULT result = factory->CreateTextFormat(
@@ -341,6 +375,8 @@ namespace {
         for (const DpiMenuEntry& entry : kDpiMenuEntries) {
             AppendMenuW(dpi_menu, MF_STRING, entry.command, entry.label);
         }
+        AppendMenuW(dpi_menu, MF_SEPARATOR, 0, nullptr);
+        AppendMenuW(dpi_menu, MF_STRING, kCommandDpiCustom, L"Custom...");
         for (const UnitMenuEntry& entry : kUnitMenuEntries) {
             AppendMenuW(unit_menu, MF_STRING, entry.command, entry.label);
         }
@@ -511,14 +547,6 @@ namespace {
     }
 
     void update_menu_selection(UiState& state) noexcept {
-        UINT dpi_command = kCommandDpi800;
-        for (const DpiMenuEntry& entry : kDpiMenuEntries) {
-            if (entry.dpi == state.reference_dpi) {
-                dpi_command = entry.command;
-                break;
-            }
-        }
-
         UINT unit_command = kCommandUnitInch;
         for (const UnitMenuEntry& entry : kUnitMenuEntries) {
             if (entry.unit == state.unit) {
@@ -527,7 +555,7 @@ namespace {
             }
         }
 
-        CheckMenuRadioItem(state.root_menu, kCommandDpiFirst, kCommandDpiLast, dpi_command, MF_BYCOMMAND);
+        CheckMenuRadioItem(state.root_menu, kCommandDpiFirst, kCommandDpiLast, state.reference_dpi_command, MF_BYCOMMAND);
         CheckMenuRadioItem(state.root_menu, kCommandUnitFirst, kCommandUnitLast, unit_command, MF_BYCOMMAND);
     }
 
@@ -615,6 +643,88 @@ namespace {
         return help_dialog_proc(dialog, message, wparam, lparam, HelpDialogKind::instruction);
     }
 
+    INT_PTR CALLBACK custom_dpi_dialog_proc(HWND dialog, UINT message, WPARAM wparam, LPARAM lparam) noexcept {
+        UiState* state = reinterpret_cast<UiState*>(GetWindowLongPtrW(dialog, DWLP_USER));
+
+        switch (message) {
+            case WM_INITDIALOG: {
+                state = reinterpret_cast<UiState*>(lparam);
+                if (state == nullptr) {
+                    DestroyWindow(dialog);
+                    return TRUE;
+                }
+                SetWindowLongPtrW(dialog, DWLP_USER, reinterpret_cast<LONG_PTR>(state));
+
+                const HINSTANCE instance = reinterpret_cast<HINSTANCE>(GetWindowLongPtrW(dialog, GWLP_HINSTANCE));
+                const HICON large_icon = LoadIconW(instance, MAKEINTRESOURCEW(IDI_WINMOUSESENSCONVERTER));
+                const HICON small_icon = LoadIconW(instance, MAKEINTRESOURCEW(IDI_SMALL));
+                SendMessageW(dialog, WM_SETICON, ICON_BIG, reinterpret_cast<LPARAM>(large_icon));
+                SendMessageW(dialog, WM_SETICON, ICON_SMALL, reinterpret_cast<LPARAM>(small_icon));
+
+                SetDlgItemInt(dialog, IDC_CUSTOM_DPI_VALUE, static_cast<UINT>(state->reference_dpi), FALSE);
+                SendDlgItemMessageW(dialog, IDC_CUSTOM_DPI_VALUE, EM_SETLIMITTEXT, 7, 0);
+                center_dialog_on_owner(dialog, state->hwnd);
+
+                const HWND edit = GetDlgItem(dialog, IDC_CUSTOM_DPI_VALUE);
+                if (edit != nullptr) {
+                    SetFocus(edit);
+                    SendMessageW(edit, EM_SETSEL, 0, -1);
+                    return FALSE;
+                }
+                return TRUE;
+            }
+
+            case WM_COMMAND:
+                switch (LOWORD(wparam)) {
+                    case IDOK: {
+                        if (state == nullptr) return TRUE;
+
+                        wchar_t text[8]{};
+                        const UINT length = GetDlgItemTextW(dialog, IDC_CUSTOM_DPI_VALUE, text, static_cast<int>(std::size(text)));
+                        const std::optional<int> parsed = parse_reference_dpi(std::wstring_view(text, length));
+                        if (!parsed.has_value()) {
+                            const HWND edit = GetDlgItem(dialog, IDC_CUSTOM_DPI_VALUE);
+                            if (edit != nullptr) {
+                                SetFocus(edit);
+                                SendMessageW(edit, EM_SETSEL, 0, -1);
+                            }
+                            return TRUE;
+                        }
+
+                        const bool changed = state->reference_dpi != *parsed || state->reference_dpi_command != kCommandDpiCustom;
+                        state->reference_dpi = *parsed;
+                        state->reference_dpi_command = kCommandDpiCustom;
+                        update_menu_selection(*state);
+                        if (changed) state->redraw_dirty = true;
+                        DestroyWindow(dialog);
+                        return TRUE;
+                    }
+
+                    case IDCANCEL:
+                        DestroyWindow(dialog);
+                        return TRUE;
+
+                    default:
+                        break;
+                }
+                break;
+
+            case WM_CLOSE:
+                DestroyWindow(dialog);
+                return TRUE;
+
+            case WM_NCDESTROY:
+                SetWindowLongPtrW(dialog, DWLP_USER, 0);
+                if (state != nullptr && state->custom_dpi_dialog == dialog) state->custom_dpi_dialog = nullptr;
+                break;
+
+            default:
+                break;
+        }
+
+        return FALSE;
+    }
+
     void show_modeless_dialog(UiState& state, int resource_id, HWND& slot, DLGPROC procedure) noexcept {
         if (slot != nullptr && IsWindow(slot)) {
             ShowWindow(slot, IsIconic(slot) ? SW_RESTORE : SW_SHOWNORMAL);
@@ -637,16 +747,18 @@ namespace {
         dialog = nullptr;
     }
 
-    void close_help_dialogs(UiState& state) noexcept {
+    void close_modeless_dialogs(UiState& state) noexcept {
         close_modeless_dialog(state.about_dialog);
         close_modeless_dialog(state.instruction_dialog);
+        close_modeless_dialog(state.custom_dpi_dialog);
     }
 
     bool handle_menu_command(UiState& state, UINT command) noexcept {
         for (const DpiMenuEntry& entry : kDpiMenuEntries) {
             if (entry.command == command) {
-                if (state.reference_dpi != entry.dpi) {
+                if (state.reference_dpi != entry.dpi || state.reference_dpi_command != entry.command) {
                     state.reference_dpi = entry.dpi;
+                    state.reference_dpi_command = entry.command;
                     update_menu_selection(state);
                     state.redraw_dirty = true;
                 }
@@ -666,6 +778,9 @@ namespace {
         }
 
         switch (command) {
+            case kCommandDpiCustom:
+                show_modeless_dialog(state, IDD_CUSTOM_DPI, state.custom_dpi_dialog, custom_dpi_dialog_proc);
+                return true;
             case kCommandAbout:
                 show_modeless_dialog(state, IDD_ABOUTBOX, state.about_dialog, about_dialog_proc);
                 return true;
@@ -765,12 +880,12 @@ namespace {
             }
 
             case WM_CLOSE:
-                if (state != nullptr) close_help_dialogs(*state);
+                if (state != nullptr) close_modeless_dialogs(*state);
                 DestroyWindow(hwnd);
                 return 0;
 
             case WM_DESTROY:
-                if (state != nullptr) close_help_dialogs(*state);
+                if (state != nullptr) close_modeless_dialogs(*state);
                 KillTimer(hwnd, kUiTimer);
                 sync::sts_.request_stop();
                 PostQuitMessage(0);
@@ -866,7 +981,7 @@ namespace ui {
         UiState* state = reinterpret_cast<UiState*>(GetWindowLongPtrW(main_window, GWLP_USERDATA));
         if (state == nullptr) return false;
 
-        const std::array<HWND, 2> dialogs{state->about_dialog, state->instruction_dialog};
+        const std::array<HWND, 3> dialogs{state->about_dialog, state->instruction_dialog, state->custom_dpi_dialog};
         for (HWND dialog : dialogs) {
             if (dialog != nullptr && IsWindow(dialog) && IsDialogMessageW(dialog, &message)) return true;
         }

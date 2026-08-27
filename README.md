@@ -32,7 +32,7 @@ This is an **empirical measurement and calibration tool**, not a database-driven
 - Starting a new recording clears the previous measurement; stopping keeps the final value visible.
 - Horizontal measurement only: movement to the right is positive and movement to the left is negative.
 - Output in raw counts, inches, millimeters, centimeters, decimeters, or meters.
-- Reference DPI presets: `100`, `400`, `800`, `1200`, `1600`, `3200`, and `10000`.
+- Reference DPI presets: `100`, `400`, `800`, `1200`, `1600`, `3200`, and `10000`, plus a modeless `Custom...` entry for values from `1` to `999999`.
 - Responsive, Per-Monitor-DPI-aware Direct2D/DirectWrite interface.
 - Modeless About and Instruction windows that do not block input collection.
 - No game injection, process-memory access, network access, telemetry, or measurement-history files.
@@ -44,7 +44,7 @@ This is an **empirical measurement and calibration tool**, not a database-driven
 
 1. Set the mouse to the DPI/CPI you want to use in both games. Avoid changing the hardware DPI during the comparison.
 2. Start WinMouseSensConverter and accept the administrator permission prompt.
-3. Open **Options → ReferenceDPI** and select the mouse's actual DPI. For in-game measurement, choose a physical-distance unit suited to the test—usually `cm` for 360° measurements or `mm` for shorter distances. Use `raw` mainly when you need to inspect the underlying counts.
+3. Open **Options → ReferenceDPI** and select the mouse's actual DPI. Choose **Custom...** to enter an integer from `1` to `999999`; invalid input is ignored and the last valid DPI remains active. For in-game measurement, choose a physical-distance unit suited to the test—usually `cm` for 360° measurements or `mm` for shorter distances. Use `raw` mainly when you need to inspect the underlying counts.
 4. In the baseline game, choose a repeatable camera state and a clear reference point. A wall corner, vertical seam, or other thin landmark works better than a broad object.
 5. Aim at the reference point, place the mouse at a marked starting position, and press `F1`. The start sound confirms that recording is active and the old measurement has been cleared.
 6. Rotate horizontally through a known angle—normally exactly 360°—until the crosshair returns to the same reference point.
@@ -334,7 +334,7 @@ WinMouseSensConverter 用来测量玩家在游戏中将视角水平旋转一个�
 - 开始新记录时自动清除上一次结果；停止后最终结果保持显示。
 - 仅显示水平位移：向右为正，向左为负。
 - 支持 raw counts、英寸、毫米、厘米、分米和米。
-- Reference DPI 预设：`100`、`400`、`800`、`1200`、`1600`、`3200`、`10000`。
+- Reference DPI 预设：`100`、`400`、`800`、`1200`、`1600`、`3200`、`10000`，并提供非模态 `Custom...` 选项，可输入 `1`～`999999`。
 - 使用 Direct2D/DirectWrite 渲染，并支持 Per-Monitor DPI 的响应式界面。
 - “关于”和“使用说明”窗口为非模态窗口，不会阻塞输入采集。
 - 不注入游戏、不读取游戏进程内存、不访问网络、不包含遥测，也不会写入测量历史文件。
@@ -346,7 +346,7 @@ WinMouseSensConverter 用来测量玩家在游戏中将视角水平旋转一个�
 
 1. 将鼠标设为你准备在两款游戏中使用的 DPI/CPI，比较过程中不要切换硬件 DPI。
 2. 启动 WinMouseSensConverter，并接受管理员权限提示。
-3. 打开 **Options → ReferenceDPI**，选择鼠标的实际 DPI。游戏内实测时，建议选择与测量距离匹配的物理单位：360° 测量通常使用 `cm`，较短距离可以使用 `mm`；只有需要检查底层计数时才主要使用 `raw`。
+3. 打开 **Options → ReferenceDPI**，选择鼠标的实际 DPI。选择 **Custom...** 可输入 `1`～`999999` 的整数；无效输入会被忽略，并继续使用上一个有效 DPI。游戏内实测时，建议选择与测量距离匹配的物理单位：360° 测量通常使用 `cm`，较短距离可以使用 `mm`；只有需要检查底层计数时才主要使用 `raw`。
 4. 在基准游戏中选择可重复的视角状态和清晰参照点。墙角、垂直接缝等细窄标志通常比宽大的物体更容易精确对齐。
 5. 将准星对准参照点，把鼠标放在标记好的起始位置，然后按下 `F1`。听到开始提示音后，记录已启动，旧结果也已清零。
 6. 水平旋转一个已知角度——通常是精确的 360°——直到准星重新回到同一个参照点。
