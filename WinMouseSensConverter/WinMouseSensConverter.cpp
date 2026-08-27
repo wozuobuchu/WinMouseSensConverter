@@ -1,10 +1,18 @@
 #include "WinMouseSensConverter.hpp"
 
+#include <CommCtrl.h>
+
 int WINAPI WinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, _In_ LPSTR lpCmdLine, _In_ int nCmdShow) {
     (void)hPrevInstance;
     (void)lpCmdLine;
 
     (void)ui::enable_process_dpi_awareness();
+
+    INITCOMMONCONTROLSEX common_controls{};
+    common_controls.dwSize = sizeof(common_controls);
+    common_controls.dwICC = ICC_STANDARD_CLASSES;
+    (void)InitCommonControlsEx(&common_controls);
+
     HWND hwnd = ui::create_main_window(hInstance);
 
     if (hwnd == nullptr || sync::sts_.stop_requested()) {

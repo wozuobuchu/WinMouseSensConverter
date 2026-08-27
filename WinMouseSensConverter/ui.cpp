@@ -3,8 +3,10 @@
 #include "Resource.hpp"
 #include "sync.hpp"
 
+#include <CommCtrl.h>
 #include <d2d1.h>
 #include <dwrite.h>
+#include <uxtheme.h>
 #include <wrl/client.h>
 
 #include <algorithm>
@@ -591,6 +593,21 @@ namespace {
         SetWindowPos(dialog, nullptr, x, y, 0, 0, SWP_NOACTIVATE | SWP_NOSIZE | SWP_NOZORDER);
     }
 
+    BOOL CALLBACK apply_native_child_theme(HWND child, LPARAM) noexcept {
+        wchar_t class_name[16]{};
+        if (GetClassNameW(child, class_name, static_cast<int>(std::size(class_name))) == 0) return TRUE;
+
+        if (lstrcmpiW(class_name, L"Button") == 0 || lstrcmpiW(class_name, L"Edit") == 0) {
+            (void)SetWindowTheme(child, L"Explorer", nullptr);
+        }
+        return TRUE;
+    }
+
+    void apply_native_dialog_theme(HWND dialog) noexcept {
+        (void)SetWindowTheme(dialog, L"Explorer", nullptr);
+        (void)EnumChildWindows(dialog, apply_native_child_theme, 0);
+    }
+
     INT_PTR help_dialog_proc(HWND dialog, UINT message, WPARAM wparam, LPARAM lparam, HelpDialogKind kind) noexcept {
         UiState* state = reinterpret_cast<UiState*>(GetWindowLongPtrW(dialog, DWLP_USER));
 
@@ -605,6 +622,7 @@ namespace {
                 SendMessageW(dialog, WM_SETICON, ICON_BIG, reinterpret_cast<LPARAM>(large_icon));
                 SendMessageW(dialog, WM_SETICON, ICON_SMALL, reinterpret_cast<LPARAM>(small_icon));
 
+                apply_native_dialog_theme(dialog);
                 if (state != nullptr) center_dialog_on_owner(dialog, state->hwnd);
                 return TRUE;
             }
@@ -661,6 +679,7 @@ namespace {
                 SendMessageW(dialog, WM_SETICON, ICON_BIG, reinterpret_cast<LPARAM>(large_icon));
                 SendMessageW(dialog, WM_SETICON, ICON_SMALL, reinterpret_cast<LPARAM>(small_icon));
 
+                apply_native_dialog_theme(dialog);
                 SetDlgItemInt(dialog, IDC_CUSTOM_DPI_VALUE, static_cast<UINT>(state->reference_dpi), FALSE);
                 SendDlgItemMessageW(dialog, IDC_CUSTOM_DPI_VALUE, EM_SETLIMITTEXT, 7, 0);
                 center_dialog_on_owner(dialog, state->hwnd);
@@ -921,6 +940,21 @@ namespace {
         return GetLastError() == ERROR_CLASS_ALREADY_EXISTS;
     }
 
+    void show_startup_rendering_error() noexcept {
+        TASKDIALOGCONFIG config{};
+        config.cbSize = sizeof(config);
+        config.dwFlags = TDF_ALLOW_DIALOG_CANCELLATION | TDF_SIZE_TO_CONTENT;
+        config.dwCommonButtons = TDCBF_CLOSE_BUTTON;
+        config.pszWindowTitle = kWindowTitle;
+        config.pszMainIcon = TD_ERROR_ICON;
+        config.pszMainInstruction = L"WinMouseSensConverter could not start.";
+        config.pszContent = L"Direct2D or DirectWrite could not be initialized.";
+
+        if (FAILED(TaskDialogIndirect(&config, nullptr, nullptr, nullptr))) {
+            (void)MessageBoxW(nullptr, config.pszContent, kWindowTitle, MB_OK | MB_ICONERROR);
+        }
+    }
+
 } // namespace
 
 namespace ui {
@@ -937,7 +971,7 @@ namespace ui {
 
             auto state = std::make_unique<UiState>();
             if (FAILED(initialize_device_independent_resources(*state))) {
-                MessageBoxW(nullptr, L"Direct2D or DirectWrite could not be initialized.", kWindowTitle, MB_OK | MB_ICONERROR);
+                show_startup_rendering_error();
                 return nullptr;
             }
 
