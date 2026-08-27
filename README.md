@@ -1,6 +1,6 @@
 # WinMouseSensConverter
 
-> A native Windows cross-game mouse sensitivity meter based on Raw Input.
+> A native Windows cross-game mouse sensitivity meter based on Raw Input.  
 > 基于 Windows Raw Input 的原生跨游戏鼠标灵敏度测量工具。
 
 <p align="center">
@@ -169,7 +169,7 @@ The application has three principal execution contexts:
 
 1. **Mouse Raw Input thread** — owns its message-only window, drains buffered relative motion, and atomically accumulates X/Y deltas.
 2. **Keyboard Raw Input thread** — owns a second message-only window and produces deduplicated key transitions for the SPSC queue.
-3. **Main/UI thread** — processes normal window messages and modeless-dialog navigation, wakes at approximately 16 ms intervals, consumes mouse/keyboard data, updates the recording state, and renders with Direct2D/DirectWrite.
+3. **Main/UI thread** — processes normal window messages and modeless-dialog navigation immediately, wakes on an approximately 8 ms UI timer, consumes mouse/keyboard data, updates the recording state, and coalesces dirty Direct2D/DirectWrite redraws to at most once per timer tick.
 
 The input threads report readiness during one-shot startup. On shutdown, `WM_QUIT` wakes each message thread before it is joined, and the Raw Input devices and message-only windows are unregistered/destroyed. Menu handlers and paint paths do not perform blocking input-thread work.
 
@@ -456,7 +456,7 @@ Windows 将 `RAWMOUSE::lLastX` 和 `lLastY` 定义为 X/Y 方向的有符号位�
 
 1. **鼠标 Raw Input 线程**——拥有独立的 message-only window，批量排空相对移动数据，并以原子方式累加 X/Y 增量。
 2. **键盘 Raw Input 线程**——拥有第二个 message-only window，为 SPSC 队列生成已经去重的按键状态变化。
-3. **主/UI 线程**——处理普通窗口消息和非模态对话框导航，以约 16 ms 的间隔唤醒，消费鼠标/键盘数据、更新记录状态，并使用 Direct2D/DirectWrite 渲染。
+3. **主/UI 线程**——即时处理普通窗口消息和非模态对话框导航，由约 8 ms 的 UI 定时器唤醒，消费鼠标/键盘数据、更新记录状态，并将脏标记对应的 Direct2D/DirectWrite 重绘合并为每个定时器节拍最多一次。
 
 两个输入线程在一次性启动过程中报告初始化结果。退出时，程序使用 `WM_QUIT` 唤醒消息线程，然后完成线程回收，并注销/销毁 Raw Input 设备和 message-only window。菜单处理和绘制路径不会执行阻塞式输入线程操作。
 

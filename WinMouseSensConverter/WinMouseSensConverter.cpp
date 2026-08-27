@@ -13,7 +13,6 @@ int WINAPI WinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, _
     }
 
     ShowWindow(hwnd, nCmdShow == 0 ? SW_SHOWDEFAULT : nCmdShow);
-    UpdateWindow(hwnd);
 
     MSG msg{0};
     int exit_code = 0;
@@ -33,11 +32,11 @@ int WINAPI WinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, _
             DispatchMessageW(&msg);
         }
 
-        // Attribute the pending movement to the state that was active before
-        // processing a new F1 key-down event at this polling boundary.
-        bool changed = main_loop::pull_msg_mouse();
-        changed = main_loop::pull_msg_kbd() || changed;
-        if (changed) ui::request_redraw(hwnd);
+        // Processing a new F1 key-down event at this polling boundary.
+        bool changed = main_loop::pull_msg_kbd() || main_loop::pull_msg_mouse();
+
+        // Redraw the UI only on the UI timer tick, and only if the content has changed since the last redraw.
+        ui::finish_main_loop_iteration(hwnd, msg, changed);
     }
 
     sync::sts_.request_stop();

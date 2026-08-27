@@ -22,8 +22,8 @@ namespace {
     constexpr wchar_t kWindowClassName[] = L"WinMouseSensConverterMainWindow";
     constexpr wchar_t kWindowTitle[] = L"WinMouseSensConverter";
 
-    constexpr UINT_PTR kInputPollTimer = 1;
-    constexpr UINT kInputPollIntervalMs = 16;
+    constexpr UINT_PTR kUiTimer = 1;
+    constexpr UINT kUiTimerIntervalMs = 8;
 
     constexpr int kDefaultClientWidthDip = 1280;
     constexpr int kDefaultClientHeightDip = 720;
@@ -101,8 +101,8 @@ namespace {
         bool owned_by_window = false;
         bool in_size_move = false;
         bool minimized = false;
+        bool redraw_dirty = true;
         UINT dpi = USER_DEFAULT_SCREEN_DPI;
-        D2D1_SIZE_U pending_pixel_size{};
 
         int reference_dpi = 800;
         Unit unit = Unit::inch;
@@ -272,13 +272,21 @@ namespace {
     }
 
     HRESULT ensure_device_resources(UiState& state) noexcept {
-        if (state.render_target != nullptr) return S_OK;
-
         RECT client{};
-        GetClientRect(state.hwnd, &client);
+        if (!GetClientRect(state.hwnd, &client)) return E_FAIL;
         const UINT width = static_cast<UINT>(std::max<LONG>(0, client.right - client.left));
         const UINT height = static_cast<UINT>(std::max<LONG>(0, client.bottom - client.top));
         if (width == 0 || height == 0) return S_FALSE;
+
+        if (state.render_target != nullptr) {
+            state.render_target->SetDpi(static_cast<float>(state.dpi), static_cast<float>(state.dpi));
+
+            const D2D1_SIZE_U pixel_size = state.render_target->GetPixelSize();
+            if (pixel_size.width != width || pixel_size.height != height) {
+                return state.render_target->Resize(D2D1::SizeU(width, height));
+            }
+            return S_OK;
+        }
 
         const D2D1_RENDER_TARGET_PROPERTIES target_properties = D2D1::RenderTargetProperties(
             D2D1_RENDER_TARGET_TYPE_DEFAULT,
@@ -482,12 +490,12 @@ namespace {
         draw_text(state, L"Starting a new recording resets the measurement.", state.body_format.Get(), D2D1::RectF(instruction_left, instruction_card.top + 34.0f, instruction_card.right - 16.0f, instruction_card.bottom - 6.0f), state.secondary_text_brush.Get());
     }
 
-    void paint_window(UiState& state) noexcept {
+    bool paint_window(UiState& state) noexcept {
         const HRESULT resource_result = ensure_device_resources(state);
-        if (resource_result == S_FALSE) return;
+        if (resource_result == S_FALSE) return false;
         if (FAILED(resource_result)) {
             discard_device_resources(state);
-            return;
+            return false;
         }
 
         state.render_target->BeginDraw();
@@ -499,17 +507,7 @@ namespace {
         if (draw_result == D2DERR_RECREATE_TARGET) {
             discard_device_resources(state);
         }
-    }
-
-    void resize_render_target(UiState& state, UINT width, UINT height) noexcept {
-        state.pending_pixel_size = D2D1::SizeU(width, height);
-        state.value_layout.Reset();
-        if (state.render_target == nullptr || width == 0 || height == 0) return;
-
-        state.render_target->SetDpi(static_cast<float>(state.dpi), static_cast<float>(state.dpi));
-        if (FAILED(state.render_target->Resize(D2D1::SizeU(width, height)))) {
-            discard_device_resources(state);
-        }
+        return SUCCEEDED(draw_result);
     }
 
     void update_menu_selection(UiState& state) noexcept {
@@ -531,7 +529,6 @@ namespace {
 
         CheckMenuRadioItem(state.root_menu, kCommandDpiFirst, kCommandDpiLast, dpi_command, MF_BYCOMMAND);
         CheckMenuRadioItem(state.root_menu, kCommandUnitFirst, kCommandUnitLast, unit_command, MF_BYCOMMAND);
-        DrawMenuBar(state.hwnd);
     }
 
     enum class HelpDialogKind : uint8_t {
@@ -650,9 +647,8 @@ namespace {
             if (entry.command == command) {
                 if (state.reference_dpi != entry.dpi) {
                     state.reference_dpi = entry.dpi;
-                    state.value_layout.Reset();
                     update_menu_selection(state);
-                    ui::request_redraw(state.hwnd);
+                    state.redraw_dirty = true;
                 }
                 return true;
             }
@@ -662,9 +658,8 @@ namespace {
             if (entry.command == command) {
                 if (state.unit != entry.unit) {
                     state.unit = entry.unit;
-                    state.value_layout.Reset();
                     update_menu_selection(state);
-                    ui::request_redraw(state.hwnd);
+                    state.redraw_dirty = true;
                 }
                 return true;
             }
@@ -712,7 +707,7 @@ namespace {
 
         switch (message) {
             case WM_CREATE:
-                if (SetTimer(hwnd, kInputPollTimer, kInputPollIntervalMs, nullptr) == 0) return -1;
+                if (SetTimer(hwnd, kUiTimer, kUiTimerIntervalMs, nullptr) == 0) return -1;
                 return 0;
 
             case WM_COMMAND:
@@ -730,25 +725,14 @@ namespace {
             case WM_EXITSIZEMOVE:
                 if (state != nullptr) {
                     state->in_size_move = false;
-                    RECT client{};
-                    GetClientRect(hwnd, &client);
-                    resize_render_target(*state, static_cast<UINT>(std::max<LONG>(0, client.right)), static_cast<UINT>(std::max<LONG>(0, client.bottom)));
-                    ui::request_redraw(hwnd);
+                    state->redraw_dirty = true;
                 }
                 return 0;
 
             case WM_SIZE:
                 if (state != nullptr) {
                     state->minimized = wparam == SIZE_MINIMIZED;
-                    if (!state->minimized) {
-                        const UINT width = LOWORD(lparam);
-                        const UINT height = HIWORD(lparam);
-                        state->pending_pixel_size = D2D1::SizeU(width, height);
-                        if (!state->in_size_move) {
-                            resize_render_target(*state, width, height);
-                            ui::request_redraw(hwnd);
-                        }
-                    }
+                    state->redraw_dirty = true;
                 }
                 return 0;
 
@@ -757,21 +741,16 @@ namespace {
                     state->dpi = HIWORD(wparam);
                     const RECT* suggested = reinterpret_cast<const RECT*>(lparam);
                     SetWindowPos(hwnd, nullptr, suggested->left, suggested->top, suggested->right - suggested->left, suggested->bottom - suggested->top, SWP_NOACTIVATE | SWP_NOZORDER);
-                    if (!state->in_size_move) {
-                        RECT client{};
-                        GetClientRect(hwnd, &client);
-                        resize_render_target(*state, static_cast<UINT>(std::max<LONG>(0, client.right)), static_cast<UINT>(std::max<LONG>(0, client.bottom)));
-                        ui::request_redraw(hwnd);
-                    }
+                    state->redraw_dirty = true;
                 }
                 return 0;
 
             case WM_DISPLAYCHANGE:
-                ui::request_redraw(hwnd);
+                if (state != nullptr) state->redraw_dirty = true;
                 return 0;
 
             case WM_TIMER:
-                if (wparam == kInputPollTimer) return 0;
+                if (wparam == kUiTimer) return 0;
                 break;
 
             case WM_ERASEBKGND:
@@ -780,8 +759,8 @@ namespace {
             case WM_PAINT: {
                 PAINTSTRUCT paint{};
                 BeginPaint(hwnd, &paint);
-                if (state != nullptr && !state->in_size_move && !state->minimized) paint_window(*state);
                 EndPaint(hwnd, &paint);
+                if (state != nullptr) state->redraw_dirty = true;
                 return 0;
             }
 
@@ -792,7 +771,7 @@ namespace {
 
             case WM_DESTROY:
                 if (state != nullptr) close_help_dialogs(*state);
-                KillTimer(hwnd, kInputPollTimer);
+                KillTimer(hwnd, kUiTimer);
                 sync::sts_.request_stop();
                 PostQuitMessage(0);
                 return 0;
@@ -894,8 +873,18 @@ namespace ui {
         return false;
     }
 
-    void request_redraw(HWND hwnd) noexcept {
-        if (hwnd != nullptr && IsWindow(hwnd)) InvalidateRect(hwnd, nullptr, FALSE);
+    void finish_main_loop_iteration(HWND main_window, const MSG& message, bool content_changed) noexcept {
+        if (main_window == nullptr || !IsWindow(main_window)) return;
+
+        UiState* state = reinterpret_cast<UiState*>(GetWindowLongPtrW(main_window, GWLP_USERDATA));
+        if (state == nullptr) return;
+
+        if (content_changed) state->redraw_dirty = true;
+
+        const bool redraw_tick = message.hwnd == main_window && message.message == WM_TIMER && message.wParam == kUiTimer;
+        if (!redraw_tick || !state->redraw_dirty || state->in_size_move || state->minimized) return;
+
+        if (paint_window(*state)) state->redraw_dirty = false;
     }
 
 } // namespace ui

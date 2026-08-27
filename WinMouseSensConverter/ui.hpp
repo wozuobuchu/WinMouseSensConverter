@@ -20,8 +20,8 @@ namespace ui {
     // Routes keyboard navigation to any open modeless dialog.
     bool preprocess_modeless_dialog_message(HWND main_window, MSG& message) noexcept;
 
-    // Invalidates the client area without erasing the Direct2D back buffer.
-    void request_redraw(HWND hwnd) noexcept;
+    // Marks changed UI data dirty and renders it only on the UI timer tick.
+    void finish_main_loop_iteration(HWND main_window, const MSG& message, bool content_changed) noexcept;
 
 } // namespace ui
 
