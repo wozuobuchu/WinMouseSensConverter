@@ -8,8 +8,6 @@ int WINAPI WinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, _
     (void)hPrevInstance;
     (void)lpCmdLine;
 
-    (void)ui::enable_process_dpi_awareness();
-
     INITCOMMONCONTROLSEX common_controls{};
     common_controls.dwSize = sizeof(common_controls);
     common_controls.dwICC = ICC_STANDARD_CLASSES;

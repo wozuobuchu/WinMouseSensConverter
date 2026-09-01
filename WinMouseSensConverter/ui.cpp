@@ -983,12 +983,6 @@ namespace {
 
 namespace ui {
 
-    bool enable_process_dpi_awareness() noexcept {
-        if (SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2)) return true;
-        if (GetLastError() == ERROR_ACCESS_DENIED) return true;
-        return SetProcessDPIAware() != FALSE;
-    }
-
     HWND create_main_window(HINSTANCE instance, config::UserConfig& user_config) noexcept {
         std::unique_ptr<UiState> state;
         HWND hwnd = nullptr;

@@ -13,9 +13,6 @@
 
 namespace ui {
 
-    // Must run before the first top-level window is created.
-    bool enable_process_dpi_awareness() noexcept;
-
     // Creates the application's main window. The window owns its UI resources.
     HWND create_main_window(HINSTANCE instance, config::UserConfig& user_config) noexcept;
 
