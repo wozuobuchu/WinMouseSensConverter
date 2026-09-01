@@ -6,6 +6,7 @@
 #include <CommCtrl.h>
 #include <d2d1.h>
 #include <dwrite.h>
+#include <shellapi.h>
 #include <uxtheme.h>
 #include <wrl/client.h>
 
@@ -17,6 +18,7 @@
 #include <limits>
 #include <memory>
 #include <optional>
+#include <string>
 #include <string_view>
 #include <utility>
 
@@ -55,6 +57,7 @@ namespace {
     constexpr UINT kCommandUnitM = 1105;
     constexpr UINT kCommandUnitLast = 1105;
 
+    constexpr UINT kCommandEditConfiguration = 1150;
     constexpr UINT kCommandAbout = 1200;
     constexpr UINT kCommandInstruction = 1201;
     constexpr UINT kCommandExit = 1202;
@@ -425,6 +428,8 @@ namespace {
 
         AppendMenuW(options, MF_POPUP, reinterpret_cast<UINT_PTR>(dpi_menu), L"ReferenceDPI");
         AppendMenuW(options, MF_POPUP, reinterpret_cast<UINT_PTR>(unit_menu), L"Unit");
+        AppendMenuW(options, MF_SEPARATOR, 0, nullptr);
+        AppendMenuW(options, MF_STRING, kCommandEditConfiguration, L"Edit Configuration File...");
         AppendMenuW(help, MF_STRING, kCommandAbout, L"About");
         AppendMenuW(help, MF_STRING, kCommandInstruction, L"Instruction");
 
@@ -823,6 +828,25 @@ namespace {
         close_modeless_dialog(state.custom_dpi_dialog);
     }
 
+    void open_configuration_directory(HWND owner) noexcept {
+        try {
+            const std::optional<std::filesystem::path> directory = config::configuration_directory();
+            if (!directory.has_value()) return;
+
+            const std::wstring parameters = L"\"" + directory->wstring() + L"\"";
+            SHELLEXECUTEINFOW execute_info{};
+            execute_info.cbSize = sizeof(execute_info);
+            execute_info.fMask = SEE_MASK_ASYNCOK | SEE_MASK_FLAG_NO_UI;
+            execute_info.hwnd = owner;
+            execute_info.lpVerb = L"open";
+            execute_info.lpFile = L"explorer.exe";
+            execute_info.lpParameters = parameters.c_str();
+            execute_info.nShow = SW_SHOWNORMAL;
+            (void)ShellExecuteExW(&execute_info);
+        } catch (...) {
+        }
+    }
+
     bool handle_menu_command(UiState& state, UINT command) noexcept {
         for (const DpiMenuEntry& entry : kDpiMenuEntries) {
             if (entry.command == command) {
@@ -852,6 +876,9 @@ namespace {
         switch (command) {
             case kCommandDpiCustom:
                 show_modeless_dialog(state, IDD_CUSTOM_DPI, state.custom_dpi_dialog, custom_dpi_dialog_proc);
+                return true;
+            case kCommandEditConfiguration:
+                open_configuration_directory(state.hwnd);
                 return true;
             case kCommandAbout:
                 show_modeless_dialog(state, IDD_ABOUTBOX, state.about_dialog, about_dialog_proc);

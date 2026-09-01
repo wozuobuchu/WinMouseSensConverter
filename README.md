@@ -63,6 +63,8 @@ The selected Reference DPI, output unit, and recording key are loaded at startup
 %LOCALAPPDATA%\WinMouseSensConverter\config.ini
 ```
 
+Choose **Options → Edit Configuration File...** to open the containing directory in File Explorer. The file is not opened automatically.
+
 The file is UTF-8 text with the following format:
 
 ```ini
@@ -389,6 +391,8 @@ WinMouseSensConverter 用来测量玩家在游戏中将视角水平旋转一个�
 ```text
 %LOCALAPPDATA%\WinMouseSensConverter\config.ini
 ```
+
+选择 **Options → Edit Configuration File...** 可在文件资源管理器中打开配置文件所在目录，但不会自动打开配置文件。
 
 配置文件是 UTF-8 文本，格式如下：
 

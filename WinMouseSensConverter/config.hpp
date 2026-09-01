@@ -264,6 +264,10 @@ namespace config {
 
     } // namespace detail
 
+    inline std::optional<std::filesystem::path> configuration_directory() noexcept {
+        return detail::config_directory();
+    }
+
     inline bool save(const UserConfig& user_config) noexcept {
         try {
             const std::optional<std::filesystem::path> directory = detail::config_directory();
