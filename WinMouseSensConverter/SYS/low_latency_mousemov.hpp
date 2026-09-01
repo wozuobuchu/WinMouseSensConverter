@@ -31,6 +31,8 @@ namespace rawinput {
         friend class LowLatencyMouseMovLifetimeGuard;
 
         inline static constexpr size_t kRawInputBatchCapacity = 64;
+        inline static constexpr DWORD kRawInputBatchIntervalMs = 1;
+        inline static constexpr DWORD kControlWakeMask = QS_ALLINPUT & ~static_cast<DWORD>(QS_RAWINPUT);
 
         LowLatencyMouseMov() = delete;
 
@@ -179,11 +181,12 @@ namespace rawinput {
             bool running = true;
 
             while (running) {
+                // Exclude Raw Input from the wake mask so high-rate reports accumulate until the 1 ms timeout.
                 const DWORD wait_result = MsgWaitForMultipleObjectsEx(
                     0,
                     nullptr,
-                    INFINITE,
-                    QS_ALLINPUT,
+                    kRawInputBatchIntervalMs,
+                    kControlWakeMask,
                     MWMO_INPUTAVAILABLE
                 );
                 if (wait_result == WAIT_FAILED) break;
