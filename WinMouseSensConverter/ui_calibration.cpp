@@ -12,16 +12,17 @@ namespace ui::modes::calibration {
 
         HRESULT update_dpi_layout(detail::UiState& state, const detail::SharedDataSnapshot& shared_data, double counts, float width, float height) noexcept {
             detail::DpiResultLayoutCache& cache = state.calibration_dpi_layout;
-            if (cache.layout != nullptr && cache.counts == counts && cache.calibration_distance_cm == state.calibration_distance_cm && cache.width == width && cache.height == height) return S_OK;
-
             wchar_t text[64]{};
             const int written = counts > 0.0
                 ? swprintf_s(text, L"%.2f DPI", detail::calibration_dpi(shared_data.accumulated_dx, shared_data.accumulated_dy, state.calibration_distance_cm))
                 : swprintf_s(text, L"— DPI");
             if (written <= 0) return E_FAIL;
+            const UINT32 text_length = static_cast<UINT32>(written);
+
+            if (cache.layout != nullptr && cache.display_text_length == text_length && std::wmemcmp(cache.display_text.data(), text, text_length) == 0 && cache.width == width && cache.height == height) return S_OK;
 
             detail::ComPtr<IDWriteTextLayout> layout;
-            HRESULT result = state.write_factory->CreateTextLayout(text, static_cast<UINT32>(written), state.value_format.Get(), std::max(1.0f, width), std::max(1.0f, height), layout.GetAddressOf());
+            HRESULT result = state.write_factory->CreateTextLayout(text, text_length, state.value_format.Get(), std::max(1.0f, width), std::max(1.0f, height), layout.GetAddressOf());
             if (FAILED(result)) return result;
 
             const wchar_t* separator = std::wcschr(text, L' ');
@@ -35,8 +36,8 @@ namespace ui::modes::calibration {
             }
 
             cache.layout = std::move(layout);
-            cache.counts = counts;
-            cache.calibration_distance_cm = state.calibration_distance_cm;
+            std::copy_n(text, text_length + 1, cache.display_text.begin());
+            cache.display_text_length = text_length;
             cache.width = width;
             cache.height = height;
             return S_OK;

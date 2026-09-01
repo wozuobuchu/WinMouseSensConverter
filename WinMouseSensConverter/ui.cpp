@@ -312,7 +312,7 @@ namespace {
         const D2D1_HWND_RENDER_TARGET_PROPERTIES hwnd_properties = D2D1::HwndRenderTargetProperties(
             state.hwnd,
             D2D1::SizeU(width, height),
-            D2D1_PRESENT_OPTIONS_RETAIN_CONTENTS
+            D2D1_PRESENT_OPTIONS_NONE
         );
 
         HRESULT result = state.d2d_factory->CreateHwndRenderTarget(target_properties, hwnd_properties, state.render_target.GetAddressOf());

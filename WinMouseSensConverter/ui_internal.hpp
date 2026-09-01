@@ -15,7 +15,6 @@
 #include <wrl/client.h>
 
 #include <array>
-#include <limits>
 
 namespace ui::detail {
 
@@ -24,17 +23,16 @@ namespace ui::detail {
 
     struct ValueLayoutCache {
         ComPtr<IDWriteTextLayout> layout;
-        double raw_count = std::numeric_limits<double>::quiet_NaN();
-        int reference_dpi = 0;
-        Unit unit = Unit::raw;
+        std::array<wchar_t, 128> display_text{};
+        UINT32 display_text_length = 0;
         float width = 0.0f;
         float height = 0.0f;
     };
 
     struct DpiResultLayoutCache {
         ComPtr<IDWriteTextLayout> layout;
-        double counts = std::numeric_limits<double>::quiet_NaN();
-        int calibration_distance_cm = 0;
+        std::array<wchar_t, 64> display_text{};
+        UINT32 display_text_length = 0;
         float width = 0.0f;
         float height = 0.0f;
     };

@@ -135,15 +135,16 @@ namespace ui::detail {
     }
 
     HRESULT update_value_layout(UiState& state, ValueLayoutCache& cache, double raw_count, float width, float height) noexcept {
-        if (cache.layout != nullptr && cache.raw_count == raw_count && cache.reference_dpi == state.reference_dpi && cache.unit == state.unit && cache.width == width && cache.height == height) return S_OK;
-
         const double value = normalize_display_value(convert_distance(raw_count, state.reference_dpi, state.unit));
         wchar_t text[128]{};
         const int written = swprintf_s(text, L"%.3f %ls", value, unit_name(state.unit));
         if (written <= 0) return E_FAIL;
+        const UINT32 text_length = static_cast<UINT32>(written);
+
+        if (cache.layout != nullptr && cache.display_text_length == text_length && std::wmemcmp(cache.display_text.data(), text, text_length) == 0 && cache.width == width && cache.height == height) return S_OK;
 
         ComPtr<IDWriteTextLayout> text_layout;
-        HRESULT result = state.write_factory->CreateTextLayout(text, static_cast<UINT32>(written), state.value_format.Get(), std::max(1.0f, width), std::max(1.0f, height), text_layout.GetAddressOf());
+        HRESULT result = state.write_factory->CreateTextLayout(text, text_length, state.value_format.Get(), std::max(1.0f, width), std::max(1.0f, height), text_layout.GetAddressOf());
         if (FAILED(result)) return result;
 
         constexpr float default_value_font_size = 48.0f;
@@ -181,9 +182,8 @@ namespace ui::detail {
         }
 
         cache.layout = std::move(text_layout);
-        cache.raw_count = raw_count;
-        cache.reference_dpi = state.reference_dpi;
-        cache.unit = state.unit;
+        std::copy_n(text, text_length + 1, cache.display_text.begin());
+        cache.display_text_length = text_length;
         cache.width = width;
         cache.height = height;
         return S_OK;
