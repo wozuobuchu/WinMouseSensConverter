@@ -1,4 +1,5 @@
 #include "ui.hpp"
+#include "ui_internal.hpp"
 
 #include "Resource.hpp"
 #include "sync.hpp"
@@ -25,6 +26,7 @@
 namespace {
 
     using Microsoft::WRL::ComPtr;
+    using ui::detail::UiState;
 
     constexpr wchar_t kWindowClassName[] = L"WinMouseSensConverterMainWindow";
     constexpr wchar_t kWindowTitle[] = L"WinMouseSensConverter";
@@ -36,6 +38,11 @@ namespace {
     constexpr int kDefaultClientHeightDip = 720;
     constexpr int kMinimumClientWidthDip = 640;
     constexpr int kMinimumClientHeightDip = 360;
+
+    constexpr UINT kCommandModeFirst = 900;
+    constexpr UINT kCommandModeMeasurement = 900;
+    constexpr UINT kCommandModeCalibration = 901;
+    constexpr UINT kCommandModeLast = 901;
 
     constexpr UINT kCommandDpiFirst = 1000;
     constexpr UINT kCommandDpi100 = 1000;
@@ -57,6 +64,13 @@ namespace {
     constexpr UINT kCommandUnitM = 1105;
     constexpr UINT kCommandUnitLast = 1105;
 
+    constexpr UINT kCommandCalibrationDistanceFirst = 1120;
+    constexpr UINT kCommandCalibrationDistance10 = 1120;
+    constexpr UINT kCommandCalibrationDistance20 = 1121;
+    constexpr UINT kCommandCalibrationDistance50 = 1122;
+    constexpr UINT kCommandCalibrationDistanceCustom = 1123;
+    constexpr UINT kCommandCalibrationDistanceLast = 1123;
+
     constexpr UINT kCommandEditConfiguration = 1150;
     constexpr UINT kCommandAbout = 1200;
     constexpr UINT kCommandInstruction = 1201;
@@ -76,13 +90,10 @@ namespace {
         const wchar_t* label;
     };
 
-    struct ValueLayoutCache {
-        ComPtr<IDWriteTextLayout> layout;
-        double raw_count = std::numeric_limits<double>::quiet_NaN();
-        int reference_dpi = 0;
-        Unit unit = Unit::raw;
-        float width = 0.0f;
-        float height = 0.0f;
+    struct CalibrationDistanceMenuEntry {
+        UINT command;
+        int distance_cm;
+        const wchar_t* label;
     };
 
     constexpr std::array<DpiMenuEntry, 7> kDpiMenuEntries{{
@@ -104,102 +115,14 @@ namespace {
         {kCommandUnitM, Unit::m, L"m"},
     }};
 
-    struct UiState {
-        HWND hwnd = nullptr;
-        HWND about_dialog = nullptr;
-        HWND instruction_dialog = nullptr;
-        HWND custom_dpi_dialog = nullptr;
-        HMENU root_menu = nullptr;
-        bool owned_by_window = false;
-        bool in_size_move = false;
-        bool minimized = false;
-        bool redraw_dirty = true;
-        UINT dpi = USER_DEFAULT_SCREEN_DPI;
-        config::UserConfig* user_config = nullptr;
-        std::array<wchar_t, 64> recording_key_name{L'F', L'1', L'\0'};
-        UINT32 recording_key_name_length = 2;
-        float shortcut_badge_width = 48.0f;
-
-        int reference_dpi = 800;
-        UINT reference_dpi_command = kCommandDpi800;
-        Unit unit = Unit::inch;
-
-        ComPtr<ID2D1Factory> d2d_factory;
-        ComPtr<IDWriteFactory> write_factory;
-
-        ComPtr<IDWriteTextFormat> title_format;
-        ComPtr<IDWriteTextFormat> status_format;
-        ComPtr<IDWriteTextFormat> value_format;
-        ComPtr<IDWriteTextFormat> label_format;
-        ComPtr<IDWriteTextFormat> setting_format;
-        ComPtr<IDWriteTextFormat> shortcut_format;
-        ComPtr<IDWriteTextFormat> body_format;
-
-        ComPtr<ID2D1HwndRenderTarget> render_target;
-        ComPtr<ID2D1SolidColorBrush> surface_brush;
-        ComPtr<ID2D1SolidColorBrush> border_brush;
-        ComPtr<ID2D1SolidColorBrush> shadow_brush;
-        ComPtr<ID2D1SolidColorBrush> primary_text_brush;
-        ComPtr<ID2D1SolidColorBrush> secondary_text_brush;
-        ComPtr<ID2D1SolidColorBrush> accent_brush;
-        ComPtr<ID2D1SolidColorBrush> status_fill_brush;
-        ComPtr<ID2D1SolidColorBrush> status_text_brush;
-
-        std::array<ValueLayoutCache, 2> value_layouts;
-
-        ~UiState() {
-            if (root_menu != nullptr) {
-                DestroyMenu(root_menu);
-                root_menu = nullptr;
-            }
-        }
-    };
+    constexpr std::array<CalibrationDistanceMenuEntry, 3> kCalibrationDistanceMenuEntries{{
+        {kCommandCalibrationDistance10, 10, L"10 cm"},
+        {kCommandCalibrationDistance20, 20, L"20 cm"},
+        {kCommandCalibrationDistance50, 50, L"50 cm"},
+    }};
 
     int scale_for_dpi(int value, UINT dpi) noexcept {
         return MulDiv(value, static_cast<int>(dpi), USER_DEFAULT_SCREEN_DPI);
-    }
-
-    const wchar_t* unit_name(Unit unit) noexcept {
-        switch (unit) {
-            case Unit::raw:
-                return L"raw";
-            case Unit::inch:
-                return L"inch";
-            case Unit::mm:
-                return L"mm";
-            case Unit::cm:
-                return L"cm";
-            case Unit::dm:
-                return L"dm";
-            case Unit::m:
-                return L"m";
-        }
-        return L"raw";
-    }
-
-    constexpr double convert_distance(double raw_dx, int reference_dpi, Unit unit) noexcept {
-        if (unit == Unit::raw) return raw_dx;
-
-        const double inches = raw_dx / static_cast<double>(reference_dpi);
-        switch (unit) {
-            case Unit::inch:
-                return inches;
-            case Unit::mm:
-                return inches * 25.4;
-            case Unit::cm:
-                return inches * 2.54;
-            case Unit::dm:
-                return inches * 0.254;
-            case Unit::m:
-                return inches * 0.0254;
-            case Unit::raw:
-                return raw_dx;
-        }
-        return raw_dx;
-    }
-
-    constexpr double normalize_display_value(double value) noexcept {
-        return value > -0.0005 && value < 0.0005 ? 0.0 : value;
     }
 
     constexpr std::optional<int> parse_reference_dpi(std::wstring_view text) noexcept {
@@ -219,6 +142,24 @@ namespace {
         const std::optional<int> parsed = parse_reference_dpi(text);
         return parsed.has_value() && *parsed == expected;
     }
+
+    constexpr std::optional<int> parse_calibration_distance_cm(std::wstring_view text) noexcept {
+        if (text.empty() || text.size() > 4) return std::nullopt;
+
+        int value = 0;
+        for (const wchar_t character : text) {
+            if (character < L'0' || character > L'9') return std::nullopt;
+            value = value * 10 + static_cast<int>(character - L'0');
+        }
+
+        if (value < 10 || value > 1000) return std::nullopt;
+        return value;
+    }
+
+    static_assert(parse_calibration_distance_cm(L"10") == 10);
+    static_assert(parse_calibration_distance_cm(L"1000") == 1000);
+    static_assert(!parse_calibration_distance_cm(L"9").has_value());
+    static_assert(!parse_calibration_distance_cm(L"1001").has_value());
 
     HRESULT create_text_format(IDWriteFactory* factory, float font_size, DWRITE_FONT_WEIGHT weight, DWRITE_TEXT_ALIGNMENT alignment, DWRITE_PARAGRAPH_ALIGNMENT paragraph_alignment, IDWriteTextFormat** format) noexcept {
         HRESULT result = factory->CreateTextFormat(
@@ -408,19 +349,25 @@ namespace {
 
     HMENU create_main_menu() noexcept {
         HMENU root = CreateMenu();
+        HMENU mode_menu = CreatePopupMenu();
         HMENU options = CreatePopupMenu();
         HMENU dpi_menu = CreatePopupMenu();
         HMENU unit_menu = CreatePopupMenu();
+        HMENU calibration_distance_menu = CreatePopupMenu();
         HMENU help = CreatePopupMenu();
-        if (root == nullptr || options == nullptr || dpi_menu == nullptr || unit_menu == nullptr || help == nullptr) {
+        if (root == nullptr || mode_menu == nullptr || options == nullptr || dpi_menu == nullptr || unit_menu == nullptr || calibration_distance_menu == nullptr || help == nullptr) {
             if (root != nullptr) DestroyMenu(root);
+            if (mode_menu != nullptr) DestroyMenu(mode_menu);
             if (options != nullptr) DestroyMenu(options);
             if (dpi_menu != nullptr) DestroyMenu(dpi_menu);
             if (unit_menu != nullptr) DestroyMenu(unit_menu);
+            if (calibration_distance_menu != nullptr) DestroyMenu(calibration_distance_menu);
             if (help != nullptr) DestroyMenu(help);
             return nullptr;
         }
 
+        AppendMenuW(mode_menu, MF_STRING, kCommandModeMeasurement, L"Measurement");
+        AppendMenuW(mode_menu, MF_STRING, kCommandModeCalibration, L"Calibration");
         for (const DpiMenuEntry& entry : kDpiMenuEntries) {
             AppendMenuW(dpi_menu, MF_STRING, entry.command, entry.label);
         }
@@ -429,201 +376,30 @@ namespace {
         for (const UnitMenuEntry& entry : kUnitMenuEntries) {
             AppendMenuW(unit_menu, MF_STRING, entry.command, entry.label);
         }
+        for (const CalibrationDistanceMenuEntry& entry : kCalibrationDistanceMenuEntries) {
+            AppendMenuW(calibration_distance_menu, MF_STRING, entry.command, entry.label);
+        }
+        AppendMenuW(calibration_distance_menu, MF_SEPARATOR, 0, nullptr);
+        AppendMenuW(calibration_distance_menu, MF_STRING, kCommandCalibrationDistanceCustom, L"Custom...");
 
         AppendMenuW(options, MF_POPUP, reinterpret_cast<UINT_PTR>(dpi_menu), L"ReferenceDPI");
         AppendMenuW(options, MF_POPUP, reinterpret_cast<UINT_PTR>(unit_menu), L"Unit");
+        AppendMenuW(options, MF_POPUP, reinterpret_cast<UINT_PTR>(calibration_distance_menu), L"Calibration Distance");
         AppendMenuW(options, MF_SEPARATOR, 0, nullptr);
         AppendMenuW(options, MF_STRING, kCommandEditConfiguration, L"Edit Configuration File...");
         AppendMenuW(help, MF_STRING, kCommandAbout, L"About");
         AppendMenuW(help, MF_STRING, kCommandInstruction, L"Instruction");
 
+        AppendMenuW(root, MF_POPUP, reinterpret_cast<UINT_PTR>(mode_menu), L"&Mode");
         AppendMenuW(root, MF_POPUP, reinterpret_cast<UINT_PTR>(options), L"&Options");
         AppendMenuW(root, MF_POPUP, reinterpret_cast<UINT_PTR>(help), L"&Help");
         AppendMenuW(root, MF_STRING, kCommandExit, L"E&xit");
 
+        CheckMenuRadioItem(root, kCommandModeFirst, kCommandModeLast, kCommandModeMeasurement, MF_BYCOMMAND);
         CheckMenuRadioItem(root, kCommandDpiFirst, kCommandDpiLast, kCommandDpi800, MF_BYCOMMAND);
-        CheckMenuRadioItem(root, kCommandUnitFirst, kCommandUnitLast, kCommandUnitInch, MF_BYCOMMAND);
+        CheckMenuRadioItem(root, kCommandUnitFirst, kCommandUnitLast, kCommandUnitCm, MF_BYCOMMAND);
+        CheckMenuRadioItem(root, kCommandCalibrationDistanceFirst, kCommandCalibrationDistanceLast, kCommandCalibrationDistance10, MF_BYCOMMAND);
         return root;
-    }
-
-    void draw_text(UiState& state, const wchar_t* text, IDWriteTextFormat* format, const D2D1_RECT_F& bounds, ID2D1Brush* brush, D2D1_DRAW_TEXT_OPTIONS options = D2D1_DRAW_TEXT_OPTIONS_CLIP) noexcept {
-        state.render_target->DrawTextW(text, static_cast<UINT32>(std::wcslen(text)), format, bounds, brush, options);
-    }
-
-    void draw_card(UiState& state, const D2D1_RECT_F& bounds, float radius) noexcept {
-        const D2D1_RECT_F shadow_bounds = D2D1::RectF(bounds.left, bounds.top + 2.0f, bounds.right, bounds.bottom + 2.0f);
-        state.render_target->FillRoundedRectangle(D2D1::RoundedRect(shadow_bounds, radius, radius), state.shadow_brush.Get());
-        const D2D1_ROUNDED_RECT card = D2D1::RoundedRect(bounds, radius, radius);
-        state.render_target->FillRoundedRectangle(card, state.surface_brush.Get());
-        state.render_target->DrawRoundedRectangle(card, state.border_brush.Get(), 1.0f);
-    }
-
-    HRESULT update_value_layout(UiState& state, ValueLayoutCache& cache, double raw_count, float width, float height) noexcept {
-        if (cache.layout != nullptr && cache.raw_count == raw_count && cache.reference_dpi == state.reference_dpi && cache.unit == state.unit && cache.width == width && cache.height == height) {
-            return S_OK;
-        }
-
-        const double value = normalize_display_value(convert_distance(raw_count, state.reference_dpi, state.unit));
-
-        wchar_t text[128]{};
-        const int written = swprintf_s(text, L"%.3f %ls", value, unit_name(state.unit));
-        if (written <= 0) return E_FAIL;
-
-        ComPtr<IDWriteTextLayout> layout;
-        HRESULT result = state.write_factory->CreateTextLayout(
-            text,
-            static_cast<UINT32>(written),
-            state.value_format.Get(),
-            std::max(1.0f, width),
-            std::max(1.0f, height),
-            layout.GetAddressOf()
-        );
-        if (FAILED(result)) return result;
-
-        constexpr float default_value_font_size = 48.0f;
-        constexpr float default_unit_font_size = 18.0f;
-        constexpr float minimum_value_font_size = 20.0f;
-        constexpr float minimum_unit_font_size = 9.0f;
-
-        const wchar_t* separator = std::wcschr(text, L' ');
-        if (separator == nullptr) return E_FAIL;
-
-        const UINT32 separator_index = static_cast<UINT32>(separator - text);
-        const UINT32 unit_start = separator_index + 1;
-        const DWRITE_TEXT_RANGE value_range{0, separator_index};
-        const DWRITE_TEXT_RANGE unit_range{unit_start, static_cast<UINT32>(written) - unit_start};
-        result = layout->SetFontSize(default_value_font_size, value_range);
-        if (FAILED(result)) return result;
-        result = layout->SetFontSize(default_unit_font_size, unit_range);
-        if (FAILED(result)) return result;
-        result = layout->SetFontWeight(DWRITE_FONT_WEIGHT_SEMI_BOLD, unit_range);
-        if (FAILED(result)) return result;
-
-        DWRITE_TEXT_METRICS metrics{};
-        result = layout->GetMetrics(&metrics);
-        if (FAILED(result)) return result;
-
-        const float usable_width = std::max(1.0f, width - 4.0f);
-        const float usable_height = std::max(1.0f, height - 2.0f);
-        const float width_scale = metrics.widthIncludingTrailingWhitespace > usable_width ? usable_width / metrics.widthIncludingTrailingWhitespace : 1.0f;
-        const float height_scale = metrics.height > usable_height ? usable_height / metrics.height : 1.0f;
-        const float scale = std::min(width_scale, height_scale);
-        if (scale < 1.0f) {
-            constexpr float fit_safety_factor = 0.9f;
-            result = layout->SetFontSize(std::max(minimum_value_font_size, default_value_font_size * scale * fit_safety_factor), value_range);
-            if (FAILED(result)) return result;
-            result = layout->SetFontSize(std::max(minimum_unit_font_size, default_unit_font_size * scale * fit_safety_factor), unit_range);
-            if (FAILED(result)) return result;
-        }
-
-        cache.layout = std::move(layout);
-        cache.raw_count = raw_count;
-        cache.reference_dpi = state.reference_dpi;
-        cache.unit = state.unit;
-        cache.width = width;
-        cache.height = height;
-        return S_OK;
-    }
-
-    void draw_interface(UiState& state) noexcept {
-        ID2D1HwndRenderTarget* target = state.render_target.Get();
-        const D2D1_SIZE_F size = target->GetSize();
-        const float width = size.width;
-        const float height = size.height;
-        if (width <= 1.0f || height <= 1.0f) return;
-
-        const float outer_margin = std::clamp(width * 0.055f, 20.0f, 56.0f);
-        const float content_width = std::min(width - outer_margin * 2.0f, 960.0f);
-        const float left = (width - content_width) * 0.5f;
-        const float right = left + content_width;
-        const float top = std::clamp(height * 0.055f, 18.0f, 42.0f);
-
-        draw_text(state, L"Mouse Sensitivity Meter", state.title_format.Get(), D2D1::RectF(left, top, right, top + 38.0f), state.primary_text_brush.Get());
-
-        const float main_top = top + 54.0f;
-        const float instruction_height = std::clamp(height * 0.12f, 64.0f, 86.0f);
-        constexpr float card_gap = 16.0f;
-        const float maximum_main_height = std::max(120.0f, height - main_top - card_gap - instruction_height - std::max(18.0f, outer_margin));
-        const float main_height = std::min(std::clamp(height * 0.5f, 180.0f, 360.0f), maximum_main_height);
-        const D2D1_RECT_F main_card = D2D1::RectF(left, main_top, right, main_top + main_height);
-        draw_card(state, main_card, 18.0f);
-
-        const float inner_padding = std::clamp(content_width * 0.04f, 22.0f, 36.0f);
-        const bool recording = public_data::on_recording_ != 0;
-        if (recording) {
-            state.status_fill_brush->SetColor(D2D1::ColorF(0xE8F7EF));
-            state.status_text_brush->SetColor(D2D1::ColorF(0x168A55));
-        } else {
-            state.status_fill_brush->SetColor(D2D1::ColorF(0xEEF1F5));
-            state.status_text_brush->SetColor(D2D1::ColorF(0x687386));
-        }
-
-        const float status_top = main_card.top + std::max(14.0f, main_height * 0.055f);
-        const D2D1_RECT_F status_bounds = D2D1::RectF(main_card.left + inner_padding, status_top, main_card.left + inner_padding + 148.0f, status_top + 32.0f);
-        state.render_target->FillRoundedRectangle(D2D1::RoundedRect(status_bounds, 16.0f, 16.0f), state.status_fill_brush.Get());
-        const D2D1_ELLIPSE status_dot = D2D1::Ellipse(D2D1::Point2F(status_bounds.left + 17.0f, status_bounds.top + 16.0f), 4.0f, 4.0f);
-        state.render_target->FillEllipse(status_dot, state.status_text_brush.Get());
-        draw_text(state, recording ? L"Recording ON" : L"Recording OFF", state.status_format.Get(), D2D1::RectF(status_bounds.left + 22.0f, status_bounds.top, status_bounds.right - 7.0f, status_bounds.bottom), state.status_text_brush.Get());
-
-        const float settings_height = std::clamp(main_height * 0.30f, 58.0f, 82.0f);
-        const float settings_top = main_card.bottom - settings_height;
-        state.render_target->DrawLine(D2D1::Point2F(main_card.left + inner_padding, settings_top), D2D1::Point2F(main_card.right - inner_padding, settings_top), state.border_brush.Get(), 1.0f);
-
-        const float center_x = (main_card.left + main_card.right) * 0.5f;
-        const D2D1_RECT_F measurement_bounds = D2D1::RectF(main_card.left + inner_padding, status_bounds.bottom + 3.0f, main_card.right - inner_padding, settings_top - 2.0f);
-        const float measurement_divider_top = measurement_bounds.top + 8.0f;
-        const float measurement_divider_bottom = measurement_bounds.bottom - 8.0f;
-        if (measurement_divider_bottom > measurement_divider_top) {
-            state.render_target->DrawLine(D2D1::Point2F(center_x, measurement_divider_top), D2D1::Point2F(center_x, measurement_divider_bottom), state.border_brush.Get(), 1.0f);
-        }
-
-        constexpr float axis_gap = 14.0f;
-        const std::array<D2D1_RECT_F, 2> axis_bounds{
-            D2D1::RectF(measurement_bounds.left, measurement_bounds.top, center_x - axis_gap, measurement_bounds.bottom),
-            D2D1::RectF(center_x + axis_gap, measurement_bounds.top, measurement_bounds.right, measurement_bounds.bottom),
-        };
-        constexpr std::array<const wchar_t*, 2> axis_labels{L"X / HORIZONTAL", L"Y / VERTICAL"};
-        const std::array<double, 2> raw_counts{public_data::accumulated_muzmov_dx, public_data::accumulated_muzmov_dy};
-
-        const float axis_label_top = measurement_bounds.top + 1.0f;
-        const float axis_label_bottom = std::min(measurement_bounds.bottom, axis_label_top + 18.0f);
-        for (size_t index = 0; index < axis_bounds.size(); ++index) {
-            const D2D1_RECT_F label_bounds = D2D1::RectF(axis_bounds[index].left, axis_label_top, axis_bounds[index].right, axis_label_bottom);
-            draw_text(state, axis_labels[index], state.label_format.Get(), label_bounds, state.secondary_text_brush.Get());
-
-            const D2D1_RECT_F axis_value_bounds = D2D1::RectF(axis_bounds[index].left, axis_label_bottom, axis_bounds[index].right, axis_bounds[index].bottom);
-            if (SUCCEEDED(update_value_layout(state, state.value_layouts[index], raw_counts[index], axis_value_bounds.right - axis_value_bounds.left, axis_value_bounds.bottom - axis_value_bounds.top))) {
-                state.render_target->DrawTextLayout(D2D1::Point2F(axis_value_bounds.left, axis_value_bounds.top), state.value_layouts[index].layout.Get(), state.primary_text_brush.Get(), D2D1_DRAW_TEXT_OPTIONS_CLIP);
-            }
-        }
-
-        state.render_target->DrawLine(D2D1::Point2F(center_x, settings_top + 12.0f), D2D1::Point2F(center_x, main_card.bottom - 12.0f), state.border_brush.Get(), 1.0f);
-
-        const D2D1_RECT_F dpi_label_bounds = D2D1::RectF(main_card.left + inner_padding, settings_top + 7.0f, center_x - 12.0f, settings_top + 27.0f);
-        const D2D1_RECT_F unit_label_bounds = D2D1::RectF(center_x + 12.0f, settings_top + 7.0f, main_card.right - inner_padding, settings_top + 27.0f);
-        draw_text(state, L"REFERENCE DPI", state.label_format.Get(), dpi_label_bounds, state.secondary_text_brush.Get());
-        draw_text(state, L"OUTPUT UNIT", state.label_format.Get(), unit_label_bounds, state.secondary_text_brush.Get());
-
-        wchar_t dpi_text[16]{};
-        swprintf_s(dpi_text, L"%d", state.reference_dpi);
-        const D2D1_RECT_F dpi_value_bounds = D2D1::RectF(dpi_label_bounds.left, settings_top + 25.0f, dpi_label_bounds.right, main_card.bottom - 5.0f);
-        const D2D1_RECT_F unit_value_bounds = D2D1::RectF(unit_label_bounds.left, settings_top + 25.0f, unit_label_bounds.right, main_card.bottom - 5.0f);
-        draw_text(state, dpi_text, state.setting_format.Get(), dpi_value_bounds, state.primary_text_brush.Get());
-        draw_text(state, unit_name(state.unit), state.setting_format.Get(), unit_value_bounds, state.primary_text_brush.Get());
-
-        const D2D1_RECT_F instruction_card = D2D1::RectF(left, main_card.bottom + card_gap, right, main_card.bottom + card_gap + instruction_height);
-        draw_card(state, instruction_card, 16.0f);
-
-        const float shortcut_size = 38.0f;
-        const float shortcut_left = instruction_card.left + 18.0f;
-        const float shortcut_top = instruction_card.top + (instruction_height - shortcut_size) * 0.5f;
-        const D2D1_RECT_F shortcut_badge = D2D1::RectF(shortcut_left, shortcut_top, shortcut_left + state.shortcut_badge_width, shortcut_top + shortcut_size);
-        state.render_target->FillRoundedRectangle(D2D1::RoundedRect(shortcut_badge, 10.0f, 10.0f), state.accent_brush.Get());
-        draw_text(state, state.recording_key_name.data(), state.status_format.Get(), shortcut_badge, state.surface_brush.Get());
-
-        const float instruction_left = shortcut_badge.right + 18.0f;
-        draw_text(state, L"Start / stop recording", state.shortcut_format.Get(), D2D1::RectF(instruction_left, instruction_card.top + 8.0f, instruction_card.right - 16.0f, instruction_card.top + 34.0f), state.primary_text_brush.Get());
-        draw_text(state, L"Starting a new recording resets the measurement.", state.body_format.Get(), D2D1::RectF(instruction_left, instruction_card.top + 34.0f, instruction_card.right - 16.0f, instruction_card.bottom - 6.0f), state.secondary_text_brush.Get());
     }
 
     bool paint_window(UiState& state) noexcept {
@@ -637,7 +413,12 @@ namespace {
         state.render_target->BeginDraw();
         state.render_target->SetTransform(D2D1::Matrix3x2F::Identity());
         state.render_target->Clear(D2D1::ColorF(0xF4F7FB));
-        draw_interface(state);
+        const ui::detail::SharedDataSnapshot shared_data = ui::detail::capture_shared_data();
+        if (shared_data.mode == config::AppMode::calibration) {
+            ui::modes::calibration::draw(state, shared_data);
+        } else {
+            ui::modes::measurement::draw(state, shared_data);
+        }
 
         const HRESULT draw_result = state.render_target->EndDraw();
         if (draw_result == D2DERR_RECREATE_TARGET) {
@@ -650,7 +431,7 @@ namespace {
         const HMENU root_menu = GetMenu(state.hwnd);
         if (root_menu == nullptr) return;
 
-        UINT unit_command = kCommandUnitInch;
+        UINT unit_command = kCommandUnitCm;
         for (const UnitMenuEntry& entry : kUnitMenuEntries) {
             if (entry.unit == state.unit) {
                 unit_command = entry.command;
@@ -658,8 +439,11 @@ namespace {
             }
         }
 
+        const UINT mode_command = public_data::current_mode_ == config::AppMode::calibration ? kCommandModeCalibration : kCommandModeMeasurement;
+        CheckMenuRadioItem(root_menu, kCommandModeFirst, kCommandModeLast, mode_command, MF_BYCOMMAND);
         CheckMenuRadioItem(root_menu, kCommandDpiFirst, kCommandDpiLast, state.reference_dpi_command, MF_BYCOMMAND);
         CheckMenuRadioItem(root_menu, kCommandUnitFirst, kCommandUnitLast, unit_command, MF_BYCOMMAND);
+        CheckMenuRadioItem(root_menu, kCommandCalibrationDistanceFirst, kCommandCalibrationDistanceLast, state.calibration_distance_command, MF_BYCOMMAND);
     }
 
     UINT dpi_command_for_value(int reference_dpi) noexcept {
@@ -667,6 +451,13 @@ namespace {
             if (entry.dpi == reference_dpi) return entry.command;
         }
         return kCommandDpiCustom;
+    }
+
+    UINT calibration_distance_command_for_value(int distance_cm) noexcept {
+        for (const CalibrationDistanceMenuEntry& entry : kCalibrationDistanceMenuEntries) {
+            if (entry.distance_cm == distance_cm) return entry.command;
+        }
+        return kCommandCalibrationDistanceCustom;
     }
 
     enum class HelpDialogKind : uint8_t {
@@ -853,6 +644,87 @@ namespace {
         return FALSE;
     }
 
+    INT_PTR CALLBACK custom_calibration_distance_dialog_proc(HWND dialog, UINT message, WPARAM wparam, LPARAM lparam) noexcept {
+        UiState* state = reinterpret_cast<UiState*>(GetWindowLongPtrW(dialog, DWLP_USER));
+
+        switch (message) {
+            case WM_INITDIALOG: {
+                state = reinterpret_cast<UiState*>(lparam);
+                if (state == nullptr) {
+                    DestroyWindow(dialog);
+                    return TRUE;
+                }
+                SetWindowLongPtrW(dialog, DWLP_USER, reinterpret_cast<LONG_PTR>(state));
+
+                const HINSTANCE instance = reinterpret_cast<HINSTANCE>(GetWindowLongPtrW(dialog, GWLP_HINSTANCE));
+                SendMessageW(dialog, WM_SETICON, ICON_BIG, reinterpret_cast<LPARAM>(LoadIconW(instance, MAKEINTRESOURCEW(IDI_WINMOUSESENSCONVERTER))));
+                SendMessageW(dialog, WM_SETICON, ICON_SMALL, reinterpret_cast<LPARAM>(LoadIconW(instance, MAKEINTRESOURCEW(IDI_SMALL))));
+                apply_native_dialog_theme(dialog);
+                SetDlgItemInt(dialog, IDC_CUSTOM_CALIBRATION_DISTANCE_VALUE, static_cast<UINT>(state->calibration_distance_cm), FALSE);
+                SendDlgItemMessageW(dialog, IDC_CUSTOM_CALIBRATION_DISTANCE_VALUE, EM_SETLIMITTEXT, 4, 0);
+                center_dialog_on_owner(dialog, state->hwnd);
+
+                const HWND edit = GetDlgItem(dialog, IDC_CUSTOM_CALIBRATION_DISTANCE_VALUE);
+                if (edit != nullptr) {
+                    SetFocus(edit);
+                    SendMessageW(edit, EM_SETSEL, 0, -1);
+                    return FALSE;
+                }
+                return TRUE;
+            }
+
+            case WM_COMMAND:
+                switch (LOWORD(wparam)) {
+                    case IDOK: {
+                        if (state == nullptr) return TRUE;
+
+                        wchar_t text[5]{};
+                        const UINT length = GetDlgItemTextW(dialog, IDC_CUSTOM_CALIBRATION_DISTANCE_VALUE, text, static_cast<int>(std::size(text)));
+                        const std::optional<int> parsed = parse_calibration_distance_cm(std::wstring_view(text, length));
+                        if (!parsed.has_value()) {
+                            const HWND edit = GetDlgItem(dialog, IDC_CUSTOM_CALIBRATION_DISTANCE_VALUE);
+                            if (edit != nullptr) {
+                                SetFocus(edit);
+                                SendMessageW(edit, EM_SETSEL, 0, -1);
+                            }
+                            return TRUE;
+                        }
+
+                        const bool changed = state->calibration_distance_cm != *parsed || state->calibration_distance_command != kCommandCalibrationDistanceCustom;
+                        state->calibration_distance_cm = *parsed;
+                        state->calibration_distance_command = kCommandCalibrationDistanceCustom;
+                        state->user_config->calibration_distance_cm = *parsed;
+                        update_menu_selection(*state);
+                        if (changed) state->redraw_dirty = true;
+                        DestroyWindow(dialog);
+                        return TRUE;
+                    }
+
+                    case IDCANCEL:
+                        DestroyWindow(dialog);
+                        return TRUE;
+
+                    default:
+                        break;
+                }
+                break;
+
+            case WM_CLOSE:
+                DestroyWindow(dialog);
+                return TRUE;
+
+            case WM_NCDESTROY:
+                SetWindowLongPtrW(dialog, DWLP_USER, 0);
+                if (state != nullptr && state->custom_calibration_distance_dialog == dialog) state->custom_calibration_distance_dialog = nullptr;
+                break;
+
+            default:
+                break;
+        }
+
+        return FALSE;
+    }
+
     void show_modeless_dialog(UiState& state, int resource_id, HWND& slot, DLGPROC procedure) noexcept {
         if (slot != nullptr && IsWindow(slot)) {
             ShowWindow(slot, IsIconic(slot) ? SW_RESTORE : SW_SHOWNORMAL);
@@ -879,6 +751,7 @@ namespace {
         close_modeless_dialog(state.about_dialog);
         close_modeless_dialog(state.instruction_dialog);
         close_modeless_dialog(state.custom_dpi_dialog);
+        close_modeless_dialog(state.custom_calibration_distance_dialog);
     }
 
     void open_configuration_directory(HWND owner) noexcept {
@@ -901,6 +774,17 @@ namespace {
     }
 
     bool handle_menu_command(UiState& state, UINT command) noexcept {
+        if (command == kCommandModeMeasurement || command == kCommandModeCalibration) {
+            const config::AppMode mode = command == kCommandModeCalibration ? config::AppMode::calibration : config::AppMode::measurement;
+            if (public_data::current_mode_ != mode) {
+                public_data::current_mode_ = mode;
+                state.user_config->mode = mode;
+                update_menu_selection(state);
+                state.redraw_dirty = true;
+            }
+            return true;
+        }
+
         for (const DpiMenuEntry& entry : kDpiMenuEntries) {
             if (entry.command == command) {
                 if (state.reference_dpi != entry.dpi || state.reference_dpi_command != entry.command) {
@@ -926,9 +810,25 @@ namespace {
             }
         }
 
+        for (const CalibrationDistanceMenuEntry& entry : kCalibrationDistanceMenuEntries) {
+            if (entry.command == command) {
+                if (state.calibration_distance_cm != entry.distance_cm || state.calibration_distance_command != entry.command) {
+                    state.calibration_distance_cm = entry.distance_cm;
+                    state.calibration_distance_command = entry.command;
+                    state.user_config->calibration_distance_cm = entry.distance_cm;
+                    update_menu_selection(state);
+                    state.redraw_dirty = true;
+                }
+                return true;
+            }
+        }
+
         switch (command) {
             case kCommandDpiCustom:
                 show_modeless_dialog(state, IDD_CUSTOM_DPI, state.custom_dpi_dialog, custom_dpi_dialog_proc);
+                return true;
+            case kCommandCalibrationDistanceCustom:
+                show_modeless_dialog(state, IDD_CUSTOM_CALIBRATION_DISTANCE, state.custom_calibration_distance_dialog, custom_calibration_distance_dialog_proc);
                 return true;
             case kCommandEditConfiguration:
                 open_configuration_directory(state.hwnd);
@@ -1110,6 +1010,8 @@ namespace ui {
             state->reference_dpi = user_config.reference_dpi;
             state->reference_dpi_command = dpi_command_for_value(user_config.reference_dpi);
             state->unit = user_config.unit;
+            state->calibration_distance_cm = user_config.calibration_distance_cm;
+            state->calibration_distance_command = calibration_distance_command_for_value(user_config.calibration_distance_cm);
             if (FAILED(initialize_device_independent_resources(*state))) {
                 show_startup_rendering_error();
                 return nullptr;
@@ -1166,7 +1068,7 @@ namespace ui {
         UiState* state = reinterpret_cast<UiState*>(GetWindowLongPtrW(main_window, GWLP_USERDATA));
         if (state == nullptr) return false;
 
-        const std::array<HWND, 3> dialogs{state->about_dialog, state->instruction_dialog, state->custom_dpi_dialog};
+        const std::array<HWND, 4> dialogs{state->about_dialog, state->instruction_dialog, state->custom_dpi_dialog, state->custom_calibration_distance_dialog};
         for (HWND dialog : dialogs) {
             if (dialog != nullptr && IsWindow(dialog) && IsDialogMessageW(dialog, &message)) return true;
         }

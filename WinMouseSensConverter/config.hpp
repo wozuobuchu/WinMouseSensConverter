@@ -28,9 +28,16 @@ namespace config {
         m,
     };
 
+    enum class AppMode : uint8_t {
+        measurement,
+        calibration,
+    };
+
     struct UserConfig {
         int reference_dpi = 800;
-        OutputUnit unit = OutputUnit::inch;
+        OutputUnit unit = OutputUnit::cm;
+        int calibration_distance_cm = 10;
+        AppMode mode = AppMode::measurement;
         uint16_t recording_key = VK_F1;
     };
 
@@ -70,6 +77,25 @@ namespace config {
             if (text == "cm") return OutputUnit::cm;
             if (text == "dm") return OutputUnit::dm;
             if (text == "m") return OutputUnit::m;
+            return std::nullopt;
+        }
+
+        constexpr std::optional<int> parse_calibration_distance_cm(std::string_view text) noexcept {
+            if (text.empty() || text.size() > 4) return std::nullopt;
+
+            int value = 0;
+            for (const char character : text) {
+                if (character < '0' || character > '9') return std::nullopt;
+                value = value * 10 + static_cast<int>(character - '0');
+            }
+
+            if (value < 10 || value > 1000) return std::nullopt;
+            return value;
+        }
+
+        constexpr std::optional<AppMode> parse_mode(std::string_view text) noexcept {
+            if (text == "measurement") return AppMode::measurement;
+            if (text == "calibration") return AppMode::calibration;
             return std::nullopt;
         }
 
@@ -121,6 +147,16 @@ namespace config {
             return {};
         }
 
+        constexpr std::string_view mode_name(AppMode mode) noexcept {
+            switch (mode) {
+                case AppMode::measurement:
+                    return "measurement";
+                case AppMode::calibration:
+                    return "calibration";
+            }
+            return {};
+        }
+
         constexpr std::optional<UserConfig> parse_configuration(std::string_view text) noexcept {
             constexpr std::string_view utf8_bom = "\xEF\xBB\xBF";
             if (text.starts_with(utf8_bom)) text.remove_prefix(utf8_bom.size());
@@ -128,6 +164,8 @@ namespace config {
             UserConfig parsed{};
             bool found_reference_dpi = false;
             bool found_unit = false;
+            bool found_calibration_distance_cm = false;
+            bool found_mode = false;
             bool found_recording_key = false;
             size_t position = 0;
 
@@ -158,6 +196,18 @@ namespace config {
                         if (!unit.has_value()) return std::nullopt;
                         parsed.unit = *unit;
                         found_unit = true;
+                    } else if (key == "calibration_distance_cm") {
+                        if (found_calibration_distance_cm) return std::nullopt;
+                        const std::optional<int> distance = parse_calibration_distance_cm(value);
+                        if (!distance.has_value()) return std::nullopt;
+                        parsed.calibration_distance_cm = *distance;
+                        found_calibration_distance_cm = true;
+                    } else if (key == "mode") {
+                        if (found_mode) return std::nullopt;
+                        const std::optional<AppMode> mode = parse_mode(value);
+                        if (!mode.has_value()) return std::nullopt;
+                        parsed.mode = *mode;
+                        found_mode = true;
                     } else if (key == "recording_key") {
                         if (found_recording_key) return std::nullopt;
                         const std::optional<uint16_t> recording_key = parse_recording_key(value);
@@ -171,25 +221,31 @@ namespace config {
                 position = newline + 1;
             }
 
-            if (!found_reference_dpi || !found_unit || !found_recording_key) return std::nullopt;
+            if (!found_reference_dpi || !found_unit || !found_calibration_distance_cm || !found_mode || !found_recording_key) return std::nullopt;
             return parsed;
         }
 
-        constexpr bool parses_as(std::string_view text, int reference_dpi, OutputUnit unit, uint16_t recording_key) noexcept {
+        constexpr bool parses_as(std::string_view text, int reference_dpi, OutputUnit unit, int calibration_distance_cm, AppMode mode, uint16_t recording_key) noexcept {
             const std::optional<UserConfig> parsed = parse_configuration(text);
-            return parsed.has_value() && parsed->reference_dpi == reference_dpi && parsed->unit == unit && parsed->recording_key == recording_key;
+            return parsed.has_value() && parsed->reference_dpi == reference_dpi && parsed->unit == unit && parsed->calibration_distance_cm == calibration_distance_cm && parsed->mode == mode && parsed->recording_key == recording_key;
         }
 
-        static_assert(parses_as("reference_dpi=800\nunit=inch\nrecording_key=0x70", 800, OutputUnit::inch, VK_F1));
-        static_assert(parses_as("\n recording_key = 112 \n unit = cm \n reference_dpi = 1200 \n", 1200, OutputUnit::cm, VK_F1));
-        static_assert(parses_as("unit=raw\r\nrecording_key=0XFE\r\nreference_dpi=1\r\n", 1, OutputUnit::raw, 254));
-        static_assert(parses_as("reference_dpi=999999\nunit=m\nrecording_key=0x4a", 999999, OutputUnit::m, 'J'));
+        static_assert(parses_as("reference_dpi=800\nunit=cm\ncalibration_distance_cm=10\nmode=measurement\nrecording_key=0x70", 800, OutputUnit::cm, 10, AppMode::measurement, VK_F1));
+        static_assert(parses_as("\n recording_key = 112 \n mode = calibration \n calibration_distance_cm = 1000 \n unit = cm \n reference_dpi = 1200 \n", 1200, OutputUnit::cm, 1000, AppMode::calibration, VK_F1));
+        static_assert(parses_as("unit=raw\r\nrecording_key=0XFE\r\nmode=measurement\r\nreference_dpi=1\r\ncalibration_distance_cm=50\r\n", 1, OutputUnit::raw, 50, AppMode::measurement, 254));
+        static_assert(parses_as("reference_dpi=999999\nunit=m\ncalibration_distance_cm=999\nmode=calibration\nrecording_key=0x4a\nunknown=ignored", 999999, OutputUnit::m, 999, AppMode::calibration, 'J'));
         static_assert(!parse_configuration("reference_dpi=800\nunit=inch").has_value());
-        static_assert(!parse_configuration("reference_dpi=800\nunit=inch\nrecording_key=0").has_value());
-        static_assert(!parse_configuration("reference_dpi=800\nunit=inch\nrecording_key=255").has_value());
-        static_assert(!parse_configuration("reference_dpi=800\nunit=inch\nrecording_key=-1").has_value());
-        static_assert(!parse_configuration("reference_dpi=800\nunit=inch\nrecording_key=0xGG").has_value());
-        static_assert(!parse_configuration("reference_dpi=800\nunit=inch\nrecording_key=0x70\nrecording_key=0x71").has_value());
+        static_assert(!parse_calibration_distance_cm("9").has_value());
+        static_assert(!parse_calibration_distance_cm("1001").has_value());
+        static_assert(!parse_calibration_distance_cm("10.5").has_value());
+        static_assert(!parse_mode("Measurement").has_value());
+        static_assert(!parse_configuration("reference_dpi=800\nunit=cm\ncalibration_distance_cm=10\nrecording_key=0x70").has_value());
+        static_assert(!parse_configuration("reference_dpi=800\nunit=cm\ncalibration_distance_cm=10\ncalibration_distance_cm=20\nmode=measurement\nrecording_key=0x70").has_value());
+        static_assert(!parse_configuration("reference_dpi=800\nunit=cm\ncalibration_distance_cm=10\nmode=measurement\nrecording_key=0").has_value());
+        static_assert(!parse_configuration("reference_dpi=800\nunit=cm\ncalibration_distance_cm=10\nmode=measurement\nrecording_key=255").has_value());
+        static_assert(!parse_configuration("reference_dpi=800\nunit=cm\ncalibration_distance_cm=10\nmode=measurement\nrecording_key=-1").has_value());
+        static_assert(!parse_configuration("reference_dpi=800\nunit=cm\ncalibration_distance_cm=10\nmode=measurement\nrecording_key=0xGG").has_value());
+        static_assert(!parse_configuration("reference_dpi=800\nunit=cm\ncalibration_distance_cm=10\nmode=measurement\nrecording_key=0x70\nmode=calibration").has_value());
 
         inline std::optional<std::filesystem::path> config_directory() noexcept {
             PWSTR local_app_data = nullptr;
@@ -240,7 +296,7 @@ namespace config {
         }
 
         inline bool valid(const UserConfig& user_config) noexcept {
-            return user_config.reference_dpi >= 1 && user_config.reference_dpi <= 999999 && !unit_name(user_config.unit).empty() && user_config.recording_key >= 1 && user_config.recording_key <= 254;
+            return user_config.reference_dpi >= 1 && user_config.reference_dpi <= 999999 && !unit_name(user_config.unit).empty() && user_config.calibration_distance_cm >= 10 && user_config.calibration_distance_cm <= 1000 && !mode_name(user_config.mode).empty() && user_config.recording_key >= 1 && user_config.recording_key <= 254;
         }
 
         inline std::optional<std::string> serialize(const UserConfig& user_config) noexcept {
@@ -251,6 +307,10 @@ namespace config {
                 contents += std::to_string(user_config.reference_dpi);
                 contents += "\r\nunit = ";
                 contents += unit_name(user_config.unit);
+                contents += "\r\ncalibration_distance_cm = ";
+                contents += std::to_string(user_config.calibration_distance_cm);
+                contents += "\r\nmode = ";
+                contents += mode_name(user_config.mode);
                 constexpr char hex_digits[] = "0123456789ABCDEF";
                 contents += "\r\nrecording_key = 0x";
                 contents += hex_digits[(user_config.recording_key >> 4) & 0x0F];

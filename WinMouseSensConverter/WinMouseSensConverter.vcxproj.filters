@@ -36,6 +36,9 @@
     <ClInclude Include="ui.hpp">
       <Filter>头文件</Filter>
     </ClInclude>
+    <ClInclude Include="ui_internal.hpp">
+      <Filter>头文件</Filter>
+    </ClInclude>
     <ClInclude Include="sync.hpp">
       <Filter>头文件</Filter>
     </ClInclude>
@@ -54,6 +57,15 @@
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="ui.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="ui_common.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="ui_measurement.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="ui_calibration.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
     <ClCompile Include="WinMouseSensConverter.cpp">

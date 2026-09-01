@@ -1,7 +1,7 @@
 # WinMouseSensConverter
 
-> A native Windows cross-game mouse sensitivity meter based on Raw Input.  
-> 基于 Windows Raw Input 的原生跨游戏鼠标灵敏度测量工具。
+> A native Windows mouse-distance meter and DPI calibration tool based on Raw Input.
+> 基于 Windows Raw Input 的原生鼠标测距与 DPI 定标工具。
 
 <p align="center">
   <a href="#english">English</a> · <a href="#chinese">简体中文</a>
@@ -19,6 +19,8 @@
 
 WinMouseSensConverter measures how far your mouse moves while you rotate the in-game camera through a known horizontal angle. By repeating the same measurement in another game, you can tune that game's sensitivity until both games require the same mouse travel for the same camera rotation.
 
+It also provides a dedicated DPI calibration mode. Move the mouse once along a ruler by a known physical distance, and the application derives the effective DPI from the two-dimensional Raw Input displacement. Use **Mode → Measurement** for game-distance work and **Mode → Calibration** for ruler-based DPI calibration.
+
 The most common measurement is a full 360-degree turn, usually described as **counts/360°** or **cm/360°**. The application records and displays the mouse's raw X/Y counts in the background, so you can start and stop a measurement with the configured recording key (`F1` by default) while the game remains focused. The horizontal X result is used for sensitivity matching, while Y makes unintended vertical drift visible.
 
 This is an **empirical measurement and calibration tool**, not a database-driven converter. It does not know each game's internal sensitivity formula and does not change game settings automatically. That makes it useful even when two games use different engines, scales, rounding rules, or undocumented sensitivity behavior.
@@ -31,9 +33,11 @@ This is an **empirical measurement and calibration tool**, not a database-driven
 - Different notification sounds when recording starts and stops.
 - Starting a new recording clears the previous measurement; stopping keeps the final value visible.
 - Simultaneous X/Y measurement: right is positive X, left is negative X, down is positive Y, and up is negative Y.
+- Separate Measurement and Calibration interfaces that share one recording session and can be switched without stopping or clearing it.
+- DPI calibration from a known `10`–`1000 cm` ruler distance using the net two-dimensional X/Y displacement.
 - Output in raw counts, inches, millimeters, centimeters, decimeters, or meters.
 - Reference DPI presets: `100`, `400`, `800`, `1200`, `1600`, `3200`, and `10000`, plus a modeless `Custom...` entry for values from `1` to `999999`.
-- The selected Reference DPI, output unit, and recording key are restored from a per-user configuration file.
+- The selected mode, Reference DPI, output unit, calibration distance, and recording key are restored from a per-user configuration file.
 - Responsive, Per-Monitor-DPI-aware Direct2D/DirectWrite interface.
 - Modeless About and Instruction windows that do not block input collection.
 - No game injection, process-memory access, network access, telemetry, or saved measurement history; only user configuration is written.
@@ -41,7 +45,7 @@ This is an **empirical measurement and calibration tool**, not a database-driven
 > [!IMPORTANT]
 > The executable manifest requests administrator privileges. Accept the Windows UAC prompt at startup. Compatibility still depends on the game, its input mode, and any anti-cheat or exclusive-input restrictions.
 
-### Quick start
+### Measurement mode quick start
 
 1. Set the mouse to the DPI/CPI you want to use in both games. Avoid changing the hardware DPI during the comparison.
 2. Start WinMouseSensConverter and accept the administrator permission prompt.
@@ -55,9 +59,31 @@ This is an **empirical measurement and calibration tool**, not a database-driven
 
 Move or lift the mouse back to its starting position **while recording is off**. Any mouse movement during recording is part of the measurement.
 
+### DPI calibration workflow
+
+1. Place a ruler beside the mouse and choose a long, straight section of the pad. Longer distances reduce the relative effect of alignment, timing, and count quantization; `20 cm` or `50 cm` is preferable when space allows.
+2. Choose **Mode → Calibration**.
+3. Choose **Options → Calibration Distance → 10 cm / 20 cm / 50 cm**, or select **Custom...** and enter an integer from `10` through `1000`. Custom input is always in centimeters.
+4. Keep the mouse stationary, press the displayed recording key, and wait for the start sound.
+5. Move the mouse once in a straight line by exactly the selected ruler distance. Do not lift, rotate, overshoot, reverse, or correct the mouse during the movement.
+6. Stop at the ruler mark, keep the mouse stationary, and press the recording key again. The final calibrated DPI remains visible.
+7. Repeat at least five times and compare the median of the consistent results. A large spread indicates that the physical procedure should be improved before the result is used.
+
+Calibration uses the final net Raw Input vector:
+
+```text
+counts = sqrt(dx² + dy²)
+known distance in inches = calibration_distance_cm / 2.54
+calibrated DPI = counts / known distance in inches
+```
+
+This is the magnitude of the final accumulated X/Y displacement, not the sum of every packet's path length. Opposite movement on an axis cancels before the magnitude is calculated, so a curved path, reversal, or endpoint correction does not represent the ruler distance reliably.
+
+The **Measured Distance** field converts `counts` through the selected ReferenceDPI for comparison; ReferenceDPI and Unit do not enter the calibrated-DPI formula. When Unit is `raw`, Measured Distance is the captured vector magnitude and Calibration Distance is the number of counts that the current ReferenceDPI would predict for the ruler distance. The calculated result is display-only: it never overwrites ReferenceDPI. If you want to use it for later physical-distance conversion, manually choose the nearest suitable integer through **Options → ReferenceDPI → Custom...**.
+
 ### Configuration
 
-The selected Reference DPI, output unit, and recording key are loaded at startup from:
+The selected mode, Reference DPI, output unit, calibration distance, and recording key are loaded at startup from:
 
 ```text
 %LOCALAPPDATA%\WinMouseSensConverter\config.ini
@@ -71,15 +97,19 @@ The file is UTF-8 text with the following format:
 
 ```ini
 reference_dpi = 800
-unit = inch
+unit = cm
+calibration_distance_cm = 10
+mode = measurement
 recording_key = 0x70
 ```
 
-Valid units are `raw`, `inch`, `mm`, `cm`, `dm`, and `m`. Blank lines and spaces or tabs around lines, keys, `=`, and values are allowed; both CRLF and LF line endings are accepted. Key names and unit values are case-sensitive. Unknown extra fields are ignored.
+Valid units are `raw`, `inch`, `mm`, `cm`, `dm`, and `m`; valid modes are `measurement` and `calibration`; `calibration_distance_cm` must be an integer from `10` through `1000`. Blank lines and spaces or tabs around lines, keys, `=`, and values are allowed; both CRLF and LF line endings are accepted. Key names and enum values are case-sensitive. Unknown extra fields are ignored.
+
+Selecting Calibration Distance → Custom keeps `Custom...` checked for the rest of that run even if the entered value is `10`, `20`, or `50`. Only the numeric value is saved. On the next start, those three values map back to their matching preset; all other valid values map to `Custom...`.
 
 `recording_key` is a Windows Virtual-Key value from `1` through `254`. Decimal values such as `112` and hexadecimal values such as `0x70` or `0X70` are accepted; the application saves the value as two-digit uppercase hexadecimal. The main window displays the system name for the configured key, or `VK 0xNN` when Windows cannot provide one. Only values actually emitted by keyboard Raw Input can trigger recording, and configuration changes take effect on the next application start.
 
-If the file is missing, unreadable, incomplete, duplicated, or contains an invalid DPI, unit, or recording key, the application uses the defaults (`800`, `inch`, and `F1`) and attempts to replace it with a new default file. An older configuration without `recording_key` is therefore reset in full. Changes are saved when the application exits normally. Configuration failures never prevent startup and no measurement values are saved.
+Every listed field is required. If the file is missing, unreadable, incomplete, duplicated, or contains an invalid value, the application uses the complete defaults (`800`, `cm`, `10 cm`, Measurement mode, and `F1`) and attempts to replace the file. Older configurations without `calibration_distance_cm` or `mode` are therefore reset in full. Changes are saved when the application exits normally. Configuration failures never prevent startup and measurement/calibration results are never saved.
 
 ### A reliable cross-game workflow
 
@@ -188,8 +218,10 @@ flowchart LR
     KT -->|"deduplicated key events<br/>去重按键事件"| Q["Boost SPSC queue<br/>Boost 单生产者/单消费者队列"]
     Q -->|"configured key-down<br/>配置按键按下"| ML
 
-    ML --> RS["Recording state and totals<br/>记录状态与累计值"]
-    RS --> UI["Direct2D / DirectWrite UI<br/>Direct2D / DirectWrite 界面"]
+    ML --> RS["sync.hpp: mode, recording, X/Y totals<br/>模式、记录状态与 X/Y 累计值"]
+    RS --> MD{"Mode dispatcher<br/>模式分派"}
+    MD --> MUI["Measurement renderer<br/>测距模式渲染"]
+    MD --> CUI["Calibration renderer<br/>定标模式渲染"]
     ML --> DLG["Modeless help dialogs<br/>非模态帮助窗口"]
 ```
 
@@ -197,7 +229,7 @@ The application has three principal execution contexts:
 
 1. **Mouse Raw Input thread** — owns its message-only window, drains buffered relative motion, and atomically accumulates X/Y deltas.
 2. **Keyboard Raw Input thread** — owns a second message-only window and produces deduplicated key transitions for the SPSC queue.
-3. **Main/UI thread** — processes normal window messages and modeless-dialog navigation immediately, wakes on an approximately 8 ms UI timer, consumes mouse/keyboard data, updates the recording state, and coalesces dirty Direct2D/DirectWrite redraws to at most once per timer tick.
+3. **Main/UI thread** — processes normal window messages and modeless-dialog navigation immediately, wakes on an approximately 8 ms UI timer, consumes mouse/keyboard data, updates the shared state in `sync.hpp`, and dispatches exactly one mode renderer while coalescing dirty redraws to at most once per timer tick.
 
 The input threads report readiness during one-shot startup. On shutdown, `WM_QUIT` wakes each message thread before it is joined, and the Raw Input devices and message-only windows are unregistered/destroyed. Menu handlers and paint paths do not perform blocking input-thread work.
 
@@ -210,6 +242,8 @@ Small differences between repeated raw-count measurements are normal. They do no
 | Reference-angle error | The crosshair does not start and finish on exactly the same pixel; the landmark is wide; the player overshoots and corrects; animation or camera sway moves the view. | The game rotates through a slightly different angle on each trial. |
 | Human timing | The recording key is pressed while the mouse is still moving; the start/stop sound is anticipated; the two independent input streams meet the UI at different polling boundaries. | A few boundary packets can belong to the unintended side of the measurement. |
 | Mouse path and posture | Wrist/arm posture changes, the mouse yaws during a long sweep, or the physical path becomes an arc rather than a repeatable horizontal line. | Sensor X counts change even if the apparent hand travel is similar. |
+| Ruler and endpoint alignment | The ruler is angled relative to sensor motion, the marks are broad, or different reference points on the mouse body are aligned at each end. | The physical distance supplied to the DPI formula differs from the sensor's actual net displacement. |
+| Reversal and correction | The mouse overshoots, reverses, or follows a curved path. Calibration uses the final net X/Y vector, not accumulated path length. | The calculated magnitude no longer represents the ruler path reliably and the DPI result can be biased. |
 | Lift and reposition | Lift-off/landing generates motion, the mouse is placed at a different angle, or the sensor continues tracking near its lift-off distance. | Extra or missing counts and poor repeatability. |
 | Sensor and surface | Actual CPI differs from the configured DPI; count quantization, sensor noise, angle snapping, smoothing, acceleration, dirty lenses, or an inconsistent pad surface affect reports. | Converted distance can be biased; raw trials can vary. |
 | Polling and packetization | USB polling and driver scheduling group motion into different Raw Input packets. | Packet boundaries and start/stop attribution can differ. Packetization alone should not normally change the total count over a complete, stable motion. |
@@ -224,6 +258,7 @@ Small differences between repeated raw-count measurements are normal. They do no
 - Select a narrow, high-contrast landmark and disable camera bob/sway where possible.
 - Measure 360° or multiple full turns rather than a small angle.
 - Keep the mouse stationary while pressing the configured recording key, then wait for the sound before moving.
+- For DPI calibration, align one repeatable point on the mouse with narrow ruler marks, make one straight uncorrected sweep, and use the longest practical distance.
 - Reposition only while recording is off.
 - Run several trials and use the median; investigate outliers and a large range instead of hiding them in an average.
 - Calibrate hip-fire, ADS, individual scopes, vehicles, and other camera modes independently when the game gives them separate sensitivity rules.
@@ -237,6 +272,7 @@ Small differences between repeated raw-count measurements are normal. They do no
 - Both X and Y movement are displayed; the cross-game sensitivity workflow uses the horizontal X result.
 - The program does not identify the active game, infer its settings, or modify game configuration files.
 - Measurements are not saved or exported; a new recording replaces the previous value.
+- Calibrated DPI is display-only and is not automatically copied to ReferenceDPI or saved as a result.
 - Some games, anti-cheat systems, remote-desktop sessions, virtual machines, device drivers, or exclusive-input configurations may prevent background Raw Input or recording-key control from working as expected.
 - The tool measures angular mouse travel. It cannot make different FOVs, animations, recoil behavior, or aim-assist systems feel identical.
 
@@ -297,7 +333,10 @@ Running that executable triggers a Windows UAC prompt because administrator priv
 | `WinMouseSensConverter/SYS/low_latency_mousemov.hpp` | Buffered mouse Raw Input thread and atomic movement accumulator. |
 | `WinMouseSensConverter/SYS/low_latency_keyboard.hpp` | Buffered keyboard Raw Input thread and SPSC event queue. |
 | `WinMouseSensConverter/config.hpp` | Header-only user configuration parsing, loading, and atomic saving. |
-| `WinMouseSensConverter/ui.cpp` | Direct2D/DirectWrite UI, units, menus, DPI handling, and modeless dialogs. |
+| `WinMouseSensConverter/sync.hpp` | Shared recording flag, selected mode, X/Y totals, and shutdown stop source. |
+| `WinMouseSensConverter/ui.cpp` | Window lifecycle, menus, modeless dialogs, and timer-gated redraw dispatch. |
+| `WinMouseSensConverter/ui_common.cpp` | Shared Direct2D page, recording state, shortcut card, units, and value formatting. |
+| `WinMouseSensConverter/ui_measurement.cpp` / `ui_calibration.cpp` | Isolated Measurement and Calibration renderers. |
 | `WinMouseSensConverter/WinMouseSensConverter.rc` | UTF-8 icons, dialogs, strings, and version resources. |
 | `WinMouseSensConverter/WinMouseSensConverter.manifest` | Administrator execution-level declaration. |
 | `build_windows.ps1` | Visual Studio discovery and x64 MSBuild entry point. |
@@ -319,6 +358,14 @@ Reference DPI is a mathematical conversion value. A mouse labeled `800 DPI` may 
 #### Repeated trials differ by a few counts
 
 This is expected. Endpoint alignment, discrete sensor counts, mouse angle, and start/stop timing all matter. Use longer rotations, keep the mouse stationary at each recording-key press, and compare the median of multiple trials.
+
+#### Why does calibrated DPI differ between runs?
+
+The most common causes are short ruler distances, inconsistent endpoint alignment, mouse yaw, a curved or corrected path, and movement while pressing the recording key. Use a longer straight sweep, align the same physical point on the mouse at both ends, avoid lifting or reversing, and compare several trials. Sensor CPI can also vary with surface, firmware, speed, and hardware DPI step.
+
+#### Why does changing ReferenceDPI not change calibrated DPI?
+
+Calibration divides the captured raw vector magnitude directly by the known ruler distance in inches. ReferenceDPI only converts the on-screen Measured Distance and the raw-equivalent target; it is deliberately excluded from the calibrated-DPI formula.
 
 #### The result is negative
 
@@ -351,6 +398,8 @@ WinMouseSensConverter is distributed under the [GNU Affero General Public Licens
 
 WinMouseSensConverter 用来测量玩家在游戏中将视角水平旋转一个已知角度时，鼠标实际移动了多远。只要在另一款游戏中重复相同测量，就可以调整该游戏的灵敏度，直到两款游戏完成相同视角旋转所需的鼠标移动距离一致。
 
+程序还提供独立的 DPI 定标模式：让鼠标沿尺子移动一段已知物理距离，程序根据二维 Raw Input 净位移计算鼠标的有效 DPI。游戏测距使用 **Mode → Measurement**，尺子定标使用 **Mode → Calibration**。
+
 最常见的基准是完整旋转 360°，结果通常称为 **counts/360°** 或 **cm/360°**。程序会在后台记录并显示鼠标的 X/Y 原始计数，因此游戏保持焦点时也可以使用配置的录制按键（默认为 `F1`）开始和停止测量。水平 X 结果用于灵敏度匹配，Y 结果则用于观察意外的垂直偏移。
 
 这是一个基于实测的**测量与校准工具**，而不是依靠游戏数据库的自动换算器。它不了解每款游戏内部的灵敏度公式，也不会自动修改游戏设置。因此，即使两款游戏使用不同引擎、数值范围、舍入规则或未公开的灵敏度算法，也可以通过实际旋转结果进行匹配。
@@ -363,9 +412,11 @@ WinMouseSensConverter 用来测量玩家在游戏中将视角水平旋转一个�
 - 开始与停止记录会播放不同的系统提示音。
 - 开始新记录时自动清除上一次结果；停止后最终结果保持显示。
 - 同时显示 X/Y 位移：向右为 X 正方向，向左为 X 负方向，向下为 Y 正方向，向上为 Y 负方向。
+- Measurement 与 Calibration 使用互相隔离的界面，但共享同一录制会话；切换模式不会停止或清空记录。
+- 根据 `10`～`1000 cm` 的已知尺子距离和二维 X/Y 净位移定标有效 DPI。
 - 支持 raw counts、英寸、毫米、厘米、分米和米。
 - Reference DPI 预设：`100`、`400`、`800`、`1200`、`1600`、`3200`、`10000`，并提供非模态 `Custom...` 选项，可输入 `1`～`999999`。
-- 所选 Reference DPI、输出单位和录制按键会保存到当前用户的配置文件，并在下次启动时恢复。
+- 所选模式、Reference DPI、输出单位、定标距离和录制按键会保存到当前用户的配置文件，并在下次启动时恢复。
 - 使用 Direct2D/DirectWrite 渲染，并支持 Per-Monitor DPI 的响应式界面。
 - “关于”和“使用说明”窗口为非模态窗口，不会阻塞输入采集。
 - 不注入游戏、不读取游戏进程内存、不访问网络、不包含遥测，也不保存测量历史；程序只写入用户配置。
@@ -373,7 +424,7 @@ WinMouseSensConverter 用来测量玩家在游戏中将视角水平旋转一个�
 > [!IMPORTANT]
 > 可执行文件清单要求以管理员权限运行。启动时请接受 Windows UAC 提示。实际兼容性仍取决于游戏的输入模式，以及反作弊或独占输入限制。
 
-### 快速上手
+### 测距模式快速上手
 
 1. 将鼠标设为你准备在两款游戏中使用的 DPI/CPI，比较过程中不要切换硬件 DPI。
 2. 启动 WinMouseSensConverter，并接受管理员权限提示。
@@ -387,9 +438,31 @@ WinMouseSensConverter 用来测量玩家在游戏中将视角水平旋转一个�
 
 需要移动或抬起鼠标回到起始位置时，请确保记录已经**停止**。记录期间发生的所有鼠标移动都会成为测量的一部分。
 
+### DPI 定标流程
+
+1. 将尺子放在鼠标旁，在鼠标垫上选择足够长且笔直的移动区域。距离越长，端点对齐、起止时机和单个 count 量化误差所占比例通常越小；空间允许时优先使用 `20 cm` 或 `50 cm`。
+2. 选择 **Mode → Calibration**。
+3. 选择 **Options → Calibration Distance → 10 cm / 20 cm / 50 cm**；也可以选择 **Custom...**，输入 `10`～`1000` 的整数。自定义输入的单位固定为厘米。
+4. 保持鼠标静止，按下界面显示的录制按键，听到开始提示音后再移动。
+5. 让鼠标沿直线一次移动到选定的尺子距离。过程中不要抬鼠、旋转鼠标、越过端点、反向移动或回调修正。
+6. 在尺子端点停稳，再次按下录制按键。最终定标 DPI 会保持显示。
+7. 至少重复五次，并比较稳定结果的中位数。如果结果离散很大，应先改进操作流程，再使用定标值。
+
+定标使用最终 Raw Input 净位移向量：
+
+```text
+counts = sqrt(dx² + dy²)
+已知英寸距离 = calibration_distance_cm / 2.54
+定标 DPI = counts / 已知英寸距离
+```
+
+这里计算的是最终累计 X/Y 的向量长度，而不是每个数据包路径长度之和。同一轴上的反向移动会先相互抵消，因此弯曲轨迹、反向移动或端点回调不能可靠代表尺子上的已知距离。
+
+界面中的 **Measured Distance** 使用当前 ReferenceDPI 换算 `counts`，只用于比较；ReferenceDPI 和 Unit 都不参与定标 DPI 公式。Unit 为 `raw` 时，Measured Distance 显示采集到的向量 counts，Calibration Distance 显示当前 ReferenceDPI 对该尺子距离预测的等效 counts。定标结果只显示，不会自动覆盖 ReferenceDPI；如需将结果用于后续物理距离换算，请通过 **Options → ReferenceDPI → Custom...** 手工输入合适的整数。
+
 ### 配置文件
 
-程序启动时会从以下位置读取 Reference DPI、输出单位和录制按键：
+程序启动时会从以下位置读取模式、Reference DPI、输出单位、定标距离和录制按键：
 
 ```text
 %LOCALAPPDATA%\WinMouseSensConverter\config.ini
@@ -403,15 +476,19 @@ WinMouseSensConverter 用来测量玩家在游戏中将视角水平旋转一个�
 
 ```ini
 reference_dpi = 800
-unit = inch
+unit = cm
+calibration_distance_cm = 10
+mode = measurement
 recording_key = 0x70
 ```
 
-合法单位为 `raw`、`inch`、`mm`、`cm`、`dm` 和 `m`。文件可以包含空行，也允许在每行、键名、`=` 和值的两侧使用空格或制表符；CRLF 与 LF 换行均可正常解析。键名和单位值区分大小写，未知的额外字段会被忽略。
+合法单位为 `raw`、`inch`、`mm`、`cm`、`dm` 和 `m`；合法模式为 `measurement` 和 `calibration`；`calibration_distance_cm` 必须是 `10`～`1000` 的整数。文件可以包含空行，也允许在每行、键名、`=` 和值的两侧使用空格或制表符；CRLF 与 LF 换行均可正常解析。键名及枚举值区分大小写，未知的额外字段会被忽略。
+
+通过 Calibration Distance → Custom 提交后，即使输入的是 `10`、`20` 或 `50`，本次运行也保持勾选 `Custom...`。配置只保存数值；下次启动时，这三个数值会重新映射到对应预设，其他合法值则勾选 `Custom...`。
 
 `recording_key` 是 `1`～`254` 的 Windows Virtual-Key 数值。可以使用 `112` 这样的十进制值，也可以使用 `0x70` 或 `0X70` 这样的十六进制值；程序保存时会统一写成两位大写十六进制。主界面会显示该按键的系统名称；如果 Windows 无法提供名称，则显示 `VK 0xNN`。只有键盘 Raw Input 实际产生的 VK 值才能触发录制，手工修改配置后需要重启程序才能生效。
 
-如果配置文件不存在、无法读取、缺少必需字段、字段重复，或者 DPI、单位、录制按键无效，程序会使用默认值（`800`、`inch` 和 `F1`），并尝试重建默认配置文件。因此，不含 `recording_key` 的旧配置会整体重置。设置会在程序正常退出时保存。配置读写失败不会阻止程序启动，测量结果不会写入配置文件。
+上述每个字段都是必需字段。如果配置文件不存在、无法读取、字段缺失或重复，或者包含无效值，程序会恢复全部默认值（`800`、`cm`、`10 cm`、Measurement 模式和 `F1`），并尝试重建配置文件。因此，不含 `calibration_distance_cm` 或 `mode` 的旧配置会整体重置。设置会在程序正常退出时保存；配置读写失败不会阻止程序启动，测距和定标结果都不会写入配置文件。
 
 ### 可靠的跨游戏测量流程
 
@@ -514,7 +591,7 @@ Windows 将 `RAWMOUSE::lLastX` 和 `lLastY` 定义为 X/Y 方向的有符号位�
 
 1. **鼠标 Raw Input 线程**——拥有独立的 message-only window，批量排空相对移动数据，并以原子方式累加 X/Y 增量。
 2. **键盘 Raw Input 线程**——拥有第二个 message-only window，为 SPSC 队列生成已经去重的按键状态变化。
-3. **主/UI 线程**——即时处理普通窗口消息和非模态对话框导航，由约 8 ms 的 UI 定时器唤醒，消费鼠标/键盘数据、更新记录状态，并将脏标记对应的 Direct2D/DirectWrite 重绘合并为每个定时器节拍最多一次。
+3. **主/UI 线程**——即时处理普通窗口消息和非模态对话框导航，由约 8 ms 的 UI 定时器唤醒，消费鼠标/键盘数据、更新 `sync.hpp` 中的共享状态，并只分派一个模式渲染器，将脏标记对应的重绘合并为每个定时器节拍最多一次。
 
 两个输入线程在一次性启动过程中报告初始化结果。退出时，程序使用 `WM_QUIT` 唤醒消息线程，然后完成线程回收，并注销/销毁 Raw Input 设备和 message-only window。菜单处理和绘制路径不会执行阻塞式输入线程操作。
 
@@ -527,6 +604,8 @@ Windows 将 `RAWMOUSE::lLastX` 和 `lLastY` 定义为 X/Y 方向的有符号位�
 | 参照角度误差 | 准星没有落在完全相同的像素；参照物太宽；旋转越过目标后又回调；动画或镜头晃动改变视角。 | 每次实际旋转角度略有不同。 |
 | 人为起止时机 | 鼠标尚未静止就按下录制按键；根据提示音提前动作；两个独立输入流在不同 UI 轮询边界被消费。 | 少量边界数据包可能被归到测量之外或之内。 |
 | 鼠标轨迹与姿态 | 手腕/手臂姿势变化；长距离移动时鼠标自身发生偏转；实际轨迹变成弧线而不是可重复水平直线。 | 即使手部移动距离看似相近，传感器 X 计数也会变化。 |
+| 尺子与端点对齐 | 尺子方向与传感器运动方向不一致；起止标记太宽；两端使用了鼠标外壳上不同的参照点。 | 输入公式的物理距离与传感器实际净位移不一致。 |
+| 反向与回调 | 鼠标越过端点后回调、反向移动或走弯曲轨迹；定标只计算最终 X/Y 净向量，不累计路径长度。 | 计算出的向量长度不能可靠代表尺子路径，DPI 产生偏差。 |
 | 抬鼠与复位 | 抬起或落下时产生位移；鼠标以不同角度落下；传感器在接近抬升高度时继续跟踪。 | 产生额外或缺失 counts，降低重复性。 |
 | 传感器与表面 | 实际 CPI 偏离设置值；离散计数量化、传感器噪声、角度修正、平滑、加速度、镜头污渍或鼠标垫表面不一致。 | 物理距离换算产生系统偏差，raw 测量也可能波动。 |
 | 轮询与数据分包 | USB 轮询和驱动调度会把运动组合成不同的 Raw Input 数据包。 | 分包边界和起止归属可能变化；仅仅改变分包通常不应改变一次完整、稳定移动的总 counts。 |
@@ -541,6 +620,7 @@ Windows 将 `RAWMOUSE::lLastX` 和 `lLastY` 定义为 X/Y 方向的有符号位�
 - 选择细窄、高对比度参照物，并尽量关闭镜头晃动。
 - 测量 360° 或多圈，而不是很小的角度。
 - 按配置的录制按键时让鼠标保持静止，听到提示音后再移动。
+- DPI 定标时用鼠标上的同一参照点对齐细窄刻度，进行一次不回调的直线移动，并使用条件允许的最长距离。
 - 只在停止记录时复位鼠标。
 - 多次测量并使用中位数；对于异常值或较大极差，应查找原因，而不是用平均值掩盖。
 - 如果游戏为腰射、ADS、各倍率瞄准镜、载具等提供独立规则，应分别校准。
@@ -554,6 +634,7 @@ Windows 将 `RAWMOUSE::lLastX` 和 `lLastY` 定义为 X/Y 方向的有符号位�
 - 界面同时显示 X 与 Y 位移；跨游戏灵敏度匹配使用水平 X 结果。
 - 程序不会识别当前游戏、推断游戏设置或修改游戏配置文件。
 - 测量不会保存或导出；开始新记录时会替换之前的结果。
+- 定标 DPI 只显示，不会自动写入 ReferenceDPI，也不会作为测量结果保存。
 - 某些游戏、反作弊系统、远程桌面、虚拟机、设备驱动或独占输入配置可能阻止后台 Raw Input 或录制按键控制正常工作。
 - 本工具匹配的是完成指定视角转动所需的鼠标距离，无法让不同 FOV、动画、后坐力或辅助瞄准系统产生完全相同的主观手感。
 
@@ -614,7 +695,10 @@ x64\Release\WinMouseSensConverter.exe
 | `WinMouseSensConverter/SYS/low_latency_mousemov.hpp` | 批量鼠标 Raw Input 线程和原子位移累加器。 |
 | `WinMouseSensConverter/SYS/low_latency_keyboard.hpp` | 批量键盘 Raw Input 线程和 SPSC 事件队列。 |
 | `WinMouseSensConverter/config.hpp` | 仅头文件的用户配置解析、读取与原子保存实现。 |
-| `WinMouseSensConverter/ui.cpp` | Direct2D/DirectWrite 界面、单位、菜单、DPI 处理和非模态窗口。 |
+| `WinMouseSensConverter/sync.hpp` | 共享录制标志、当前模式、X/Y 累计值和退出停止源。 |
+| `WinMouseSensConverter/ui.cpp` | 窗口生命周期、菜单、非模态窗口和定时器门控重绘分派。 |
+| `WinMouseSensConverter/ui_common.cpp` | 通用 Direct2D 页面、录制状态、快捷键卡片、单位和数值格式化。 |
+| `WinMouseSensConverter/ui_measurement.cpp` / `ui_calibration.cpp` | 相互隔离的测距与定标模式渲染器。 |
 | `WinMouseSensConverter/WinMouseSensConverter.rc` | UTF-8 图标、对话框、字符串和版本资源。 |
 | `WinMouseSensConverter/WinMouseSensConverter.manifest` | 管理员执行级别声明。 |
 | `build_windows.ps1` | Visual Studio 检测与 x64 MSBuild 入口。 |
@@ -636,6 +720,14 @@ Reference DPI 是数学换算值。标称 `800 DPI` 的鼠标可能存在可测�
 #### 重复测量相差几个 counts
 
 这是正常现象。参照点对齐、传感器离散计数、鼠标角度和起止时机都会产生影响。请使用更长的旋转距离，在每次按下录制按键时保持鼠标静止，并比较多次测量的中位数。
+
+#### 为什么每次定标得到的 DPI 不一样？
+
+常见原因包括尺子距离太短、端点对齐不一致、鼠标自身偏转、轨迹弯曲或回调，以及按录制键时鼠标仍在移动。请使用更长的直线距离，在两端用鼠标上的同一参照点对齐，不要抬鼠或反向移动，并比较多次结果。传感器 CPI 也可能随表面、固件、移动速度和硬件 DPI 档位发生变化。
+
+#### 为什么修改 ReferenceDPI 不会改变定标 DPI？
+
+定标公式直接用原始向量 counts 除以尺子的已知英寸距离。ReferenceDPI 只用于换算界面上的 Measured Distance 和 raw 等效目标，刻意不参与定标 DPI 计算。
 
 #### 结果为什么是负数？
 
