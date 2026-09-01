@@ -33,9 +33,10 @@ This is an **empirical measurement and calibration tool**, not a database-driven
 - Horizontal measurement only: movement to the right is positive and movement to the left is negative.
 - Output in raw counts, inches, millimeters, centimeters, decimeters, or meters.
 - Reference DPI presets: `100`, `400`, `800`, `1200`, `1600`, `3200`, and `10000`, plus a modeless `Custom...` entry for values from `1` to `999999`.
+- The selected Reference DPI and output unit are restored from a per-user configuration file.
 - Responsive, Per-Monitor-DPI-aware Direct2D/DirectWrite interface.
 - Modeless About and Instruction windows that do not block input collection.
-- No game injection, process-memory access, network access, telemetry, or measurement-history files.
+- No game injection, process-memory access, network access, telemetry, or saved measurement history; only user configuration is written.
 
 > [!IMPORTANT]
 > The executable manifest requests administrator privileges. Accept the Windows UAC prompt at startup. Compatibility still depends on the game, its input mode, and any anti-cheat or exclusive-input restrictions.
@@ -53,6 +54,25 @@ This is an **empirical measurement and calibration tool**, not a database-driven
 9. In the target game, reproduce the same camera state and angle. Adjust its sensitivity until the selected physical-distance measurement matches the baseline within a practical tolerance.
 
 Move or lift the mouse back to its starting position **while recording is off**. Any mouse movement during recording is part of the measurement.
+
+### Configuration
+
+The selected Reference DPI and output unit are loaded at startup from:
+
+```text
+%LOCALAPPDATA%\WinMouseSensConverter\config.ini
+```
+
+The file is UTF-8 text with the following format:
+
+```ini
+reference_dpi = 800
+unit = inch
+```
+
+Valid units are `raw`, `inch`, `mm`, `cm`, `dm`, and `m`. Blank lines and spaces or tabs around lines, keys, `=`, and values are allowed; both CRLF and LF line endings are accepted. Key names and unit values are case-sensitive. Unknown extra fields are ignored.
+
+If the file is missing, unreadable, incomplete, duplicated, or contains an invalid DPI or unit, the application uses the defaults (`800` and `inch`) and attempts to replace it with a new default file. Changes are saved when the application exits normally. Configuration failures never prevent startup and no measurement values are saved.
 
 ### A reliable cross-game workflow
 
@@ -268,6 +288,7 @@ Running that executable triggers a Windows UAC prompt because administrator priv
 | `WinMouseSensConverter/WinMouseSensConverter.hpp` | Keyboard/mouse consumption and recording-state transitions. |
 | `WinMouseSensConverter/SYS/low_latency_mousemov.hpp` | Buffered mouse Raw Input thread and atomic movement accumulator. |
 | `WinMouseSensConverter/SYS/low_latency_keyboard.hpp` | Buffered keyboard Raw Input thread and SPSC event queue. |
+| `WinMouseSensConverter/config.hpp` | Header-only user configuration parsing, loading, and atomic saving. |
 | `WinMouseSensConverter/ui.cpp` | Direct2D/DirectWrite UI, units, menus, DPI handling, and modeless dialogs. |
 | `WinMouseSensConverter/WinMouseSensConverter.rc` | UTF-8 icons, dialogs, strings, and version resources. |
 | `WinMouseSensConverter/WinMouseSensConverter.manifest` | Administrator execution-level declaration. |
@@ -335,9 +356,10 @@ WinMouseSensConverter 用来测量玩家在游戏中将视角水平旋转一个�
 - 仅显示水平位移：向右为正，向左为负。
 - 支持 raw counts、英寸、毫米、厘米、分米和米。
 - Reference DPI 预设：`100`、`400`、`800`、`1200`、`1600`、`3200`、`10000`，并提供非模态 `Custom...` 选项，可输入 `1`～`999999`。
+- 所选 Reference DPI 和输出单位会保存到当前用户的配置文件，并在下次启动时恢复。
 - 使用 Direct2D/DirectWrite 渲染，并支持 Per-Monitor DPI 的响应式界面。
 - “关于”和“使用说明”窗口为非模态窗口，不会阻塞输入采集。
-- 不注入游戏、不读取游戏进程内存、不访问网络、不包含遥测，也不会写入测量历史文件。
+- 不注入游戏、不读取游戏进程内存、不访问网络、不包含遥测，也不保存测量历史；程序只写入用户配置。
 
 > [!IMPORTANT]
 > 可执行文件清单要求以管理员权限运行。启动时请接受 Windows UAC 提示。实际兼容性仍取决于游戏的输入模式，以及反作弊或独占输入限制。
@@ -355,6 +377,25 @@ WinMouseSensConverter 用来测量玩家在游戏中将视角水平旋转一个�
 9. 在目标游戏中复现相同的视角状态和旋转角度，调整灵敏度，直到所选物理距离在合理容差内与基准一致。
 
 需要移动或抬起鼠标回到起始位置时，请确保记录已经**停止**。记录期间发生的所有鼠标移动都会成为测量的一部分。
+
+### 配置文件
+
+程序启动时会从以下位置读取 Reference DPI 和输出单位：
+
+```text
+%LOCALAPPDATA%\WinMouseSensConverter\config.ini
+```
+
+配置文件是 UTF-8 文本，格式如下：
+
+```ini
+reference_dpi = 800
+unit = inch
+```
+
+合法单位为 `raw`、`inch`、`mm`、`cm`、`dm` 和 `m`。文件可以包含空行，也允许在每行、键名、`=` 和值的两侧使用空格或制表符；CRLF 与 LF 换行均可正常解析。键名和单位值区分大小写，未知的额外字段会被忽略。
+
+如果配置文件不存在、无法读取、缺少必需字段、字段重复，或者 DPI/单位无效，程序会使用默认值（`800` 和 `inch`），并尝试重建默认配置文件。设置会在程序正常退出时保存。配置读写失败不会阻止程序启动，测量结果不会写入配置文件。
 
 ### 可靠的跨游戏测量流程
 
@@ -555,6 +596,7 @@ x64\Release\WinMouseSensConverter.exe
 | `WinMouseSensConverter/WinMouseSensConverter.hpp` | 消费键盘/鼠标数据并切换记录状态。 |
 | `WinMouseSensConverter/SYS/low_latency_mousemov.hpp` | 批量鼠标 Raw Input 线程和原子位移累加器。 |
 | `WinMouseSensConverter/SYS/low_latency_keyboard.hpp` | 批量键盘 Raw Input 线程和 SPSC 事件队列。 |
+| `WinMouseSensConverter/config.hpp` | 仅头文件的用户配置解析、读取与原子保存实现。 |
 | `WinMouseSensConverter/ui.cpp` | Direct2D/DirectWrite 界面、单位、菜单、DPI 处理和非模态窗口。 |
 | `WinMouseSensConverter/WinMouseSensConverter.rc` | UTF-8 图标、对话框、字符串和版本资源。 |
 | `WinMouseSensConverter/WinMouseSensConverter.manifest` | 管理员执行级别声明。 |

@@ -18,6 +18,9 @@
     </Filter>
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="config.hpp">
+      <Filter>头文件</Filter>
+    </ClInclude>
     <ClInclude Include="framework.hpp">
       <Filter>头文件</Filter>
     </ClInclude>

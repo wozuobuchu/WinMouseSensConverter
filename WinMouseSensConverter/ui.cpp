@@ -59,14 +59,7 @@ namespace {
     constexpr UINT kCommandInstruction = 1201;
     constexpr UINT kCommandExit = 1202;
 
-    enum class Unit : uint8_t {
-        raw,
-        inch,
-        mm,
-        cm,
-        dm,
-        m,
-    };
+    using Unit = config::OutputUnit;
 
     struct DpiMenuEntry {
         UINT command;
@@ -110,6 +103,7 @@ namespace {
         bool minimized = false;
         bool redraw_dirty = true;
         UINT dpi = USER_DEFAULT_SCREEN_DPI;
+        config::UserConfig* user_config = nullptr;
 
         int reference_dpi = 800;
         UINT reference_dpi_command = kCommandDpi800;
@@ -564,6 +558,13 @@ namespace {
         CheckMenuRadioItem(root_menu, kCommandUnitFirst, kCommandUnitLast, unit_command, MF_BYCOMMAND);
     }
 
+    UINT dpi_command_for_value(int reference_dpi) noexcept {
+        for (const DpiMenuEntry& entry : kDpiMenuEntries) {
+            if (entry.dpi == reference_dpi) return entry.command;
+        }
+        return kCommandDpiCustom;
+    }
+
     enum class HelpDialogKind : uint8_t {
         about,
         instruction,
@@ -716,6 +717,7 @@ namespace {
                         const bool changed = state->reference_dpi != *parsed || state->reference_dpi_command != kCommandDpiCustom;
                         state->reference_dpi = *parsed;
                         state->reference_dpi_command = kCommandDpiCustom;
+                        state->user_config->reference_dpi = *parsed;
                         update_menu_selection(*state);
                         if (changed) state->redraw_dirty = true;
                         DestroyWindow(dialog);
@@ -781,6 +783,7 @@ namespace {
                 if (state.reference_dpi != entry.dpi || state.reference_dpi_command != entry.command) {
                     state.reference_dpi = entry.dpi;
                     state.reference_dpi_command = entry.command;
+                    state.user_config->reference_dpi = entry.dpi;
                     update_menu_selection(state);
                     state.redraw_dirty = true;
                 }
@@ -792,6 +795,7 @@ namespace {
             if (entry.command == command) {
                 if (state.unit != entry.unit) {
                     state.unit = entry.unit;
+                    state.user_config->unit = entry.unit;
                     update_menu_selection(state);
                     state.redraw_dirty = true;
                 }
@@ -968,7 +972,7 @@ namespace ui {
         return SetProcessDPIAware() != FALSE;
     }
 
-    HWND create_main_window(HINSTANCE instance) noexcept {
+    HWND create_main_window(HINSTANCE instance, config::UserConfig& user_config) noexcept {
         std::unique_ptr<UiState> state;
         HWND hwnd = nullptr;
 
@@ -976,6 +980,10 @@ namespace ui {
             if (!register_window_class(instance)) return nullptr;
 
             state = std::make_unique<UiState>();
+            state->user_config = &user_config;
+            state->reference_dpi = user_config.reference_dpi;
+            state->reference_dpi_command = dpi_command_for_value(user_config.reference_dpi);
+            state->unit = user_config.unit;
             if (FAILED(initialize_device_independent_resources(*state))) {
                 show_startup_rendering_error();
                 return nullptr;
@@ -1011,6 +1019,8 @@ namespace ui {
                 DestroyWindow(hwnd);
                 return nullptr;
             }
+
+            update_menu_selection(*state);
 
             // SetMenu transfers menu lifetime to the window. Keep only non-owning access through GetMenu.
             state->root_menu = nullptr;

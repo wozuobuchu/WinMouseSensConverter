@@ -1,5 +1,7 @@
 #include "WinMouseSensConverter.hpp"
 
+#include "config.hpp"
+
 #include <CommCtrl.h>
 
 int WINAPI WinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, _In_ LPSTR lpCmdLine, _In_ int nCmdShow) {
@@ -13,7 +15,8 @@ int WINAPI WinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, _
     common_controls.dwICC = ICC_STANDARD_CLASSES;
     (void)InitCommonControlsEx(&common_controls);
 
-    HWND hwnd = ui::create_main_window(hInstance);
+    config::UserConfig user_config = config::load_or_create();
+    HWND hwnd = ui::create_main_window(hInstance, user_config);
 
     if (hwnd == nullptr || sync::sts_.stop_requested()) {
         sync::sts_.request_stop();
@@ -50,6 +53,8 @@ int WINAPI WinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, _
     }
 
     sync::sts_.request_stop();
+
+    (void)config::save(user_config);
 
     return exit_code;
 }
