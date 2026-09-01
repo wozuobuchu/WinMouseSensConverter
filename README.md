@@ -1,6 +1,6 @@
 # WinMouseSensConverter
 
-> A native Windows mouse-distance meter and DPI calibration tool based on Raw Input.
+> A native Windows mouse-distance meter and DPI calibration tool based on Raw Input.  
 > 基于 Windows Raw Input 的原生鼠标测距与 DPI 定标工具。
 
 <p align="center">

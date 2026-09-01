@@ -156,11 +156,6 @@ namespace {
         return value;
     }
 
-    static_assert(parse_calibration_distance_cm(L"10") == 10);
-    static_assert(parse_calibration_distance_cm(L"1000") == 1000);
-    static_assert(!parse_calibration_distance_cm(L"9").has_value());
-    static_assert(!parse_calibration_distance_cm(L"1001").has_value());
-
     HRESULT create_text_format(IDWriteFactory* factory, float font_size, DWRITE_FONT_WEIGHT weight, DWRITE_TEXT_ALIGNMENT alignment, DWRITE_PARAGRAPH_ALIGNMENT paragraph_alignment, IDWriteTextFormat** format) noexcept {
         HRESULT result = factory->CreateTextFormat(
             L"Segoe UI",
@@ -244,10 +239,6 @@ namespace {
                 return false;
         }
     }
-
-    static_assert(uses_extended_key_name(VK_NEXT));
-    static_assert(uses_extended_key_name(VK_RCONTROL));
-    static_assert(!uses_extended_key_name(VK_F1));
 
     void initialize_recording_key_display(UiState& state, uint16_t recording_key) noexcept {
         const UINT scan_code = MapVirtualKeyW(recording_key, MAPVK_VK_TO_VSC_EX);

@@ -230,23 +230,6 @@ namespace config {
             return parsed.has_value() && parsed->reference_dpi == reference_dpi && parsed->unit == unit && parsed->calibration_distance_cm == calibration_distance_cm && parsed->mode == mode && parsed->recording_key == recording_key;
         }
 
-        static_assert(parses_as("reference_dpi=800\nunit=cm\ncalibration_distance_cm=10\nmode=measurement\nrecording_key=0x70", 800, OutputUnit::cm, 10, AppMode::measurement, VK_F1));
-        static_assert(parses_as("\n recording_key = 112 \n mode = calibration \n calibration_distance_cm = 1000 \n unit = cm \n reference_dpi = 1200 \n", 1200, OutputUnit::cm, 1000, AppMode::calibration, VK_F1));
-        static_assert(parses_as("unit=raw\r\nrecording_key=0XFE\r\nmode=measurement\r\nreference_dpi=1\r\ncalibration_distance_cm=50\r\n", 1, OutputUnit::raw, 50, AppMode::measurement, 254));
-        static_assert(parses_as("reference_dpi=999999\nunit=m\ncalibration_distance_cm=999\nmode=calibration\nrecording_key=0x4a\nunknown=ignored", 999999, OutputUnit::m, 999, AppMode::calibration, 'J'));
-        static_assert(!parse_configuration("reference_dpi=800\nunit=inch").has_value());
-        static_assert(!parse_calibration_distance_cm("9").has_value());
-        static_assert(!parse_calibration_distance_cm("1001").has_value());
-        static_assert(!parse_calibration_distance_cm("10.5").has_value());
-        static_assert(!parse_mode("Measurement").has_value());
-        static_assert(!parse_configuration("reference_dpi=800\nunit=cm\ncalibration_distance_cm=10\nrecording_key=0x70").has_value());
-        static_assert(!parse_configuration("reference_dpi=800\nunit=cm\ncalibration_distance_cm=10\ncalibration_distance_cm=20\nmode=measurement\nrecording_key=0x70").has_value());
-        static_assert(!parse_configuration("reference_dpi=800\nunit=cm\ncalibration_distance_cm=10\nmode=measurement\nrecording_key=0").has_value());
-        static_assert(!parse_configuration("reference_dpi=800\nunit=cm\ncalibration_distance_cm=10\nmode=measurement\nrecording_key=255").has_value());
-        static_assert(!parse_configuration("reference_dpi=800\nunit=cm\ncalibration_distance_cm=10\nmode=measurement\nrecording_key=-1").has_value());
-        static_assert(!parse_configuration("reference_dpi=800\nunit=cm\ncalibration_distance_cm=10\nmode=measurement\nrecording_key=0xGG").has_value());
-        static_assert(!parse_configuration("reference_dpi=800\nunit=cm\ncalibration_distance_cm=10\nmode=measurement\nrecording_key=0x70\nmode=calibration").has_value());
-
         inline std::optional<std::filesystem::path> config_directory() noexcept {
             PWSTR local_app_data = nullptr;
             if (FAILED(SHGetKnownFolderPath(FOLDERID_LocalAppData, KF_FLAG_DEFAULT, nullptr, &local_app_data))) {

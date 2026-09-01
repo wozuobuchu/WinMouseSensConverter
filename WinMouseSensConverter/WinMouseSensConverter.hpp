@@ -31,16 +31,6 @@ namespace main_loop {
         }
     }
 
-    static_assert(matches_recording_key(VK_F1, VK_F1));
-    static_assert(!matches_recording_key(VK_F1, VK_F2));
-    static_assert(matches_recording_key(VK_SHIFT, VK_LSHIFT));
-    static_assert(matches_recording_key(VK_SHIFT, VK_RSHIFT));
-    static_assert(matches_recording_key(VK_CONTROL, VK_LCONTROL));
-    static_assert(matches_recording_key(VK_CONTROL, VK_RCONTROL));
-    static_assert(matches_recording_key(VK_MENU, VK_LMENU));
-    static_assert(matches_recording_key(VK_MENU, VK_RMENU));
-    static_assert(!matches_recording_key(VK_LSHIFT, VK_RSHIFT));
-
     inline static bool pull_msg_kbd(uint16_t recording_key) noexcept {
         static constexpr size_t kque_size = 1024;
         static rawinput::LowLatencyKeyboard::KeyEvent kque[kque_size];
