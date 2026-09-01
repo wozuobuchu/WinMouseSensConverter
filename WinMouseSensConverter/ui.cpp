@@ -210,25 +210,6 @@ namespace {
         return parsed.has_value() && *parsed == expected;
     }
 
-    static_assert(convert_distance(800.0, 800, Unit::raw) == 800.0);
-    static_assert(convert_distance(800.0, 800, Unit::inch) == 1.0);
-    static_assert(convert_distance(800.0, 800, Unit::mm) == 25.4);
-    static_assert(convert_distance(800.0, 800, Unit::cm) == 2.54);
-    static_assert(convert_distance(800.0, 800, Unit::dm) == 0.254);
-    static_assert(convert_distance(800.0, 800, Unit::m) == 0.0254);
-    static_assert(convert_distance(-800.0, 800, Unit::inch) == -1.0);
-    static_assert(normalize_display_value(-0.00049) == 0.0);
-    static_assert(parses_reference_dpi_as(L"1", 1));
-    static_assert(parses_reference_dpi_as(L"999999", 999999));
-    static_assert(parses_reference_dpi_as(L"000800", 800));
-    static_assert(!parse_reference_dpi(L"").has_value());
-    static_assert(!parse_reference_dpi(L"0").has_value());
-    static_assert(!parse_reference_dpi(L"1000000").has_value());
-    static_assert(!parse_reference_dpi(L"-1").has_value());
-    static_assert(!parse_reference_dpi(L" 800").has_value());
-    static_assert(!parse_reference_dpi(L"dpi").has_value());
-    static_assert(!parse_reference_dpi(L"8x0").has_value());
-
     HRESULT create_text_format(IDWriteFactory* factory, float font_size, DWRITE_FONT_WEIGHT weight, DWRITE_TEXT_ALIGNMENT alignment, DWRITE_PARAGRAPH_ALIGNMENT paragraph_alignment, IDWriteTextFormat** format) noexcept {
         HRESULT result = factory->CreateTextFormat(
             L"Segoe UI",

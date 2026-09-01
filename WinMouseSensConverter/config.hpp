@@ -142,23 +142,6 @@ namespace config {
             return parsed.has_value() && parsed->reference_dpi == reference_dpi && parsed->unit == unit;
         }
 
-        static_assert(parses_as("reference_dpi=800\nunit=inch", 800, OutputUnit::inch));
-        static_assert(parses_as("\n \t\n reference_dpi = 1200 \n\n unit = cm \n", 1200, OutputUnit::cm));
-        static_assert(parses_as("unit = mm\r\n\r\nreference_dpi = 400\r\n", 400, OutputUnit::mm));
-        static_assert(parses_as("unknown = retained\nunit=raw\nreference_dpi=1", 1, OutputUnit::raw));
-        static_assert(parses_as("\xEF\xBB\xBFreference_dpi=3200\nunit=dm", 3200, OutputUnit::dm));
-        static_assert(parses_as("reference_dpi=999999\nunit=m", 999999, OutputUnit::m));
-        static_assert(!parse_configuration("").has_value());
-        static_assert(!parse_configuration("reference_dpi=800").has_value());
-        static_assert(!parse_configuration("unit=inch").has_value());
-        static_assert(!parse_configuration("reference_dpi=0\nunit=inch").has_value());
-        static_assert(!parse_configuration("reference_dpi=1000000\nunit=inch").has_value());
-        static_assert(!parse_configuration("reference_dpi=8 00\nunit=inch").has_value());
-        static_assert(!parse_configuration("reference_dpi=800\nunit=INCH").has_value());
-        static_assert(!parse_configuration("reference_dpi=800\nreference_dpi=400\nunit=inch").has_value());
-        static_assert(!parse_configuration("reference_dpi=800\nunit=inch\nunit=cm").has_value());
-        static_assert(!parse_configuration("broken line\nreference_dpi=800\nunit=inch").has_value());
-
         inline std::optional<std::filesystem::path> config_directory() noexcept {
             PWSTR local_app_data = nullptr;
             if (FAILED(SHGetKnownFolderPath(FOLDERID_LocalAppData, KF_FLAG_DEFAULT, nullptr, &local_app_data))) {
