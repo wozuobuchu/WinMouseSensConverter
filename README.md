@@ -7,7 +7,9 @@
   <a href="#english">English</a> · <a href="#chinese">简体中文</a>
 </p>
 
-![WinMouseSensConverter application window](WinMouseSensConverterImg/img.png)
+![WinMouseSensConverter application window](WinMouseSensConverterImg/img01.png)
+
+![WinMouseSensConverter application window](WinMouseSensConverterImg/img02.png)
 
 ---
 
