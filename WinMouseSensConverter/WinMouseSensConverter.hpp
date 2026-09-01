@@ -14,22 +14,10 @@
 
 #include "sync.hpp"
 
+#include "recording_key.hpp"
 #include "ui.hpp"
 
 namespace main_loop {
-
-    constexpr bool matches_recording_key(uint16_t configured_key, uint16_t event_key) noexcept {
-        switch (configured_key) {
-            case VK_SHIFT:
-                return event_key == VK_LSHIFT || event_key == VK_RSHIFT;
-            case VK_CONTROL:
-                return event_key == VK_LCONTROL || event_key == VK_RCONTROL;
-            case VK_MENU:
-                return event_key == VK_LMENU || event_key == VK_RMENU;
-            default:
-                return configured_key == event_key;
-        }
-    }
 
     inline static bool pull_msg_kbd(uint16_t recording_key) noexcept {
         static constexpr size_t kque_size = 1024;

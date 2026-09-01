@@ -5,8 +5,6 @@
 #include <stop_token>
 
 #include "config.hpp"
-#include "SYS/low_latency_keyboard.hpp"
-#include "SYS/low_latency_mousemov.hpp"
 
 namespace sync {
     inline std::stop_source sts_;

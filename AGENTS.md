@@ -28,6 +28,15 @@ Run builds from the repository root:
 .\build_windows.ps1 -Configuration Release -Platform x64 -NoRestore
 ```
 
+Run the automatic tests from the repository root. The runner builds by default; use `-NoBuild` only after the selected configuration has already been built:
+
+```powershell
+.\WinMouseSensConverterAutomaticTest\run_tests.ps1 -Configuration Debug
+.\WinMouseSensConverterAutomaticTest\run_tests.ps1 -Configuration Release
+```
+
+The test executable must remain a console application that runs as the current user. Do not add or inherit the main application's administrator manifest or start the main executable from the test runner.
+
 The normal release artifact is:
 
 ```text

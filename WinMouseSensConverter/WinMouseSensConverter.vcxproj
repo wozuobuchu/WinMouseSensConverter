@@ -161,6 +161,7 @@
   <ItemGroup>
     <ClInclude Include="config.hpp" />
     <ClInclude Include="framework.hpp" />
+    <ClInclude Include="recording_key.hpp" />
     <ClInclude Include="Resource.hpp" />
     <ClInclude Include="sync.hpp" />
     <ClInclude Include="SYS\aop.hpp" />

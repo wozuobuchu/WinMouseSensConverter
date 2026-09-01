@@ -4,4 +4,5 @@
     <Platform Name="x86" />
   </Configurations>
   <Project Path="WinMouseSensConverter/WinMouseSensConverter.vcxproj" Id="1039d453-491c-4a43-908c-0b9165231c76" />
+  <Project Path="WinMouseSensConverterAutomaticTest/WinMouseSensConverterAutomaticTest.vcxproj" Id="2a85c5c3-9c61-4c61-8462-d55ff40e37a5" />
 </Solution>

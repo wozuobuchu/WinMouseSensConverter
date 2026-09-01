@@ -326,6 +326,23 @@ x64\Release\WinMouseSensConverter.exe
 
 Running that executable triggers a Windows UAC prompt because administrator privileges are declared in the application manifest.
 
+#### Automated tests
+
+The self-contained automatic test executable is built with the solution and runs as the current user without an administrator manifest. Run it from the repository root:
+
+```powershell
+# Build and run Debug x64 tests
+.\WinMouseSensConverterAutomaticTest\run_tests.ps1 -Configuration Debug
+
+# Build and run Release x64 tests
+.\WinMouseSensConverterAutomaticTest\run_tests.ps1 -Configuration Release
+
+# Run an already-built configuration
+.\WinMouseSensConverterAutomaticTest\run_tests.ps1 -Configuration Debug -NoBuild
+```
+
+The tests cover configuration parsing and serialization, unit and calibration calculations, recording-key matching, and DirectWrite layout-cache behavior. They do not start the application, create Raw Input threads, access the user's saved configuration, or require physical input devices.
+
 ### Repository layout
 
 | Path | Purpose |
@@ -341,6 +358,7 @@ Running that executable triggers a Windows UAC prompt because administrator priv
 | `WinMouseSensConverter/ui_measurement.cpp` / `ui_calibration.cpp` | Isolated Measurement and Calibration renderers. |
 | `WinMouseSensConverter/WinMouseSensConverter.rc` | UTF-8 icons, dialogs, strings, and version resources. |
 | `WinMouseSensConverter/WinMouseSensConverter.manifest` | Administrator execution-level declaration. |
+| `WinMouseSensConverterAutomaticTest/` | Non-elevated x64 console tests and their independent runner. |
 | `build_windows.ps1` | Visual Studio discovery and x64 MSBuild entry point. |
 
 ### Troubleshooting
@@ -688,6 +706,23 @@ x64\Release\WinMouseSensConverter.exe
 
 运行该文件时，Windows 会显示 UAC 提示，因为应用清单声明了管理员执行级别。
 
+#### 自动化测试
+
+解决方案会同时构建自包含的自动化测试程序；该程序没有管理员运行清单，按当前用户权限运行。在仓库根目录执行：
+
+```powershell
+# 构建并运行 Debug x64 测试
+.\WinMouseSensConverterAutomaticTest\run_tests.ps1 -Configuration Debug
+
+# 构建并运行 Release x64 测试
+.\WinMouseSensConverterAutomaticTest\run_tests.ps1 -Configuration Release
+
+# 直接运行已经构建的配置
+.\WinMouseSensConverterAutomaticTest\run_tests.ps1 -Configuration Debug -NoBuild
+```
+
+测试覆盖配置解析与序列化、单位与定标计算、录制快捷键匹配以及 DirectWrite 布局缓存行为。测试不会启动主程序、创建 Raw Input 线程、访问用户保存的配置，也不需要真实输入设备。
+
 ### 仓库结构
 
 | 路径 | 用途 |
@@ -703,6 +738,7 @@ x64\Release\WinMouseSensConverter.exe
 | `WinMouseSensConverter/ui_measurement.cpp` / `ui_calibration.cpp` | 相互隔离的测距与定标模式渲染器。 |
 | `WinMouseSensConverter/WinMouseSensConverter.rc` | UTF-8 图标、对话框、字符串和版本资源。 |
 | `WinMouseSensConverter/WinMouseSensConverter.manifest` | 管理员执行级别声明。 |
+| `WinMouseSensConverterAutomaticTest/` | 无需提权的 x64 控制台测试及其独立运行脚本。 |
 | `build_windows.ps1` | Visual Studio 检测与 x64 MSBuild 入口。 |
 
 ### 常见问题

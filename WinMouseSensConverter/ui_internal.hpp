@@ -118,6 +118,7 @@ namespace ui::detail {
     void draw_card(UiState& state, const D2D1_RECT_F& bounds, float radius) noexcept;
     bool begin_page(UiState& state, const SharedDataSnapshot& shared_data, const wchar_t* title, PageLayout& layout) noexcept;
     HRESULT update_value_layout(UiState& state, ValueLayoutCache& cache, double raw_count, float width, float height) noexcept;
+    HRESULT update_calibration_dpi_layout(UiState& state, const SharedDataSnapshot& shared_data, float width, float height) noexcept;
 
 } // namespace ui::detail
 
