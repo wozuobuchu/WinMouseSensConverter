@@ -19,7 +19,7 @@
 
 WinMouseSensConverter measures how far your mouse moves while you rotate the in-game camera through a known horizontal angle. By repeating the same measurement in another game, you can tune that game's sensitivity until both games require the same mouse travel for the same camera rotation.
 
-The most common measurement is a full 360-degree turn, usually described as **counts/360°** or **cm/360°**. The application records the mouse's raw horizontal counts in the background, so you can start and stop a measurement with the configured recording key (`F1` by default) while the game remains focused.
+The most common measurement is a full 360-degree turn, usually described as **counts/360°** or **cm/360°**. The application records and displays the mouse's raw X/Y counts in the background, so you can start and stop a measurement with the configured recording key (`F1` by default) while the game remains focused. The horizontal X result is used for sensitivity matching, while Y makes unintended vertical drift visible.
 
 This is an **empirical measurement and calibration tool**, not a database-driven converter. It does not know each game's internal sensitivity formula and does not change game settings automatically. That makes it useful even when two games use different engines, scales, rounding rules, or undocumented sensitivity behavior.
 
@@ -30,7 +30,7 @@ This is an **empirical measurement and calibration tool**, not a database-driven
 - Configurable background recording control (`F1` by default) without switching away from the game.
 - Different notification sounds when recording starts and stops.
 - Starting a new recording clears the previous measurement; stopping keeps the final value visible.
-- Horizontal measurement only: movement to the right is positive and movement to the left is negative.
+- Simultaneous X/Y measurement: right is positive X, left is negative X, down is positive Y, and up is negative Y.
 - Output in raw counts, inches, millimeters, centimeters, decimeters, or meters.
 - Reference DPI presets: `100`, `400`, `800`, `1200`, `1600`, `3200`, and `10000`, plus a modeless `Custom...` entry for values from `1` to `999999`.
 - The selected Reference DPI, output unit, and recording key are restored from a per-user configuration file.
@@ -128,18 +128,19 @@ If the target game requires more counts than the baseline, its sensitivity is to
 
 ### Reading the result
 
-The displayed value is the signed sum of horizontal Raw Input counts:
+The interface displays the signed sum of Raw Input counts for both axes:
 
 ```text
-raw counts = Σ RAWMOUSE::lLastX
+X raw counts = Σ RAWMOUSE::lLastX
+Y raw counts = Σ RAWMOUSE::lLastY
 ```
 
-- Positive: net movement to the right.
-- Negative: net movement to the left.
-- Zero: no net horizontal movement. Moving right and then left can cancel out.
-- Vertical movement is collected internally as part of the atomic snapshot but does not affect the displayed value.
+- Positive X is net movement to the right; negative X is net movement to the left.
+- Positive Y is net movement downward; negative Y is net movement upward, following the Raw Input coordinate convention.
+- Zero on an axis means no net movement on that axis. Opposite movements can cancel out.
+- The selected Reference DPI and output unit are applied identically to X and Y.
 
-For cross-game matching, use the same direction in every trial or compare absolute magnitudes. A suitable physical unit is normally the better practical choice: small count-to-count variations are presented on a more meaningful scale, and gameplay sensitivity usually does not need to be matched to one individual raw count. Use `cm` for typical 360° tests, `mm` when the measured distance is short, and `raw` when diagnosing the input data itself.
+For cross-game sensitivity matching, compare the horizontal X result and use the same direction in every trial or compare absolute magnitudes. The Y result helps reveal vertical drift during the sweep. A suitable physical unit is normally the better practical choice: small count-to-count variations are presented on a more meaningful scale, and gameplay sensitivity usually does not need to be matched to one individual raw count. Use `cm` for typical 360° tests, `mm` when the measured distance is short, and `raw` when diagnosing the input data itself.
 
 Physical distance is calculated from the selected Reference DPI:
 
@@ -233,7 +234,7 @@ Small differences between repeated raw-count measurements are normal. They do no
 - Windows 10 and Windows 11 only.
 - Only relative mouse reports are measured; absolute-position devices are ignored.
 - All relative mouse devices are combined rather than selected individually.
-- Only horizontal movement is displayed.
+- Both X and Y movement are displayed; the cross-game sensitivity workflow uses the horizontal X result.
 - The program does not identify the active game, infer its settings, or modify game configuration files.
 - Measurements are not saved or exported; a new recording replaces the previous value.
 - Some games, anti-cheat systems, remote-desktop sessions, virtual machines, device drivers, or exclusive-input configurations may prevent background Raw Input or recording-key control from working as expected.
@@ -350,7 +351,7 @@ WinMouseSensConverter is distributed under the [GNU Affero General Public Licens
 
 WinMouseSensConverter 用来测量玩家在游戏中将视角水平旋转一个已知角度时，鼠标实际移动了多远。只要在另一款游戏中重复相同测量，就可以调整该游戏的灵敏度，直到两款游戏完成相同视角旋转所需的鼠标移动距离一致。
 
-最常见的基准是完整旋转 360°，结果通常称为 **counts/360°** 或 **cm/360°**。程序会在后台记录鼠标的水平原始计数，因此游戏保持焦点时也可以使用配置的录制按键（默认为 `F1`）开始和停止测量。
+最常见的基准是完整旋转 360°，结果通常称为 **counts/360°** 或 **cm/360°**。程序会在后台记录并显示鼠标的 X/Y 原始计数，因此游戏保持焦点时也可以使用配置的录制按键（默认为 `F1`）开始和停止测量。水平 X 结果用于灵敏度匹配，Y 结果则用于观察意外的垂直偏移。
 
 这是一个基于实测的**测量与校准工具**，而不是依靠游戏数据库的自动换算器。它不了解每款游戏内部的灵敏度公式，也不会自动修改游戏设置。因此，即使两款游戏使用不同引擎、数值范围、舍入规则或未公开的灵敏度算法，也可以通过实际旋转结果进行匹配。
 
@@ -361,7 +362,7 @@ WinMouseSensConverter 用来测量玩家在游戏中将视角水平旋转一个�
 - 游戏保持前台时，可在后台通过配置按键控制记录，默认按键为 `F1`。
 - 开始与停止记录会播放不同的系统提示音。
 - 开始新记录时自动清除上一次结果；停止后最终结果保持显示。
-- 仅显示水平位移：向右为正，向左为负。
+- 同时显示 X/Y 位移：向右为 X 正方向，向左为 X 负方向，向下为 Y 正方向，向上为 Y 负方向。
 - 支持 raw counts、英寸、毫米、厘米、分米和米。
 - Reference DPI 预设：`100`、`400`、`800`、`1200`、`1600`、`3200`、`10000`，并提供非模态 `Custom...` 选项，可输入 `1`～`999999`。
 - 所选 Reference DPI、输出单位和录制按键会保存到当前用户的配置文件，并在下次启动时恢复。
@@ -459,18 +460,19 @@ FOV 本身并不直接定义角灵敏度，但不同 FOV、ADS 和缩放状态�
 
 ### 如何理解测量结果
 
-界面显示的是 Raw Input 水平计数的有符号总和：
+界面同时显示两个方向的 Raw Input 有符号计数总和：
 
 ```text
-raw counts = Σ RAWMOUSE::lLastX
+X raw counts = Σ RAWMOUSE::lLastX
+Y raw counts = Σ RAWMOUSE::lLastY
 ```
 
-- 正数：鼠标净位移方向向右。
-- 负数：鼠标净位移方向向左。
-- 零：没有水平净位移；先向右再向左的移动可能相互抵消。
-- 垂直位移会作为原子快照的一部分在内部采集，但不会影响界面显示值。
+- X 为正表示净位移向右，X 为负表示净位移向左。
+- Y 为正表示净位移向下，Y 为负表示净位移向上，与 Raw Input 坐标方向保持一致。
+- 某个方向为零表示该方向没有净位移；相反方向的移动可能相互抵消。
+- 所选 Reference DPI 和输出单位会以相同方式应用到 X 与 Y。
 
-跨游戏比较时，应始终使用相同方向，或者比较结果的绝对值。实际匹配更建议选择合适的物理单位：raw counts 中少量波动会表现为较大的整数差值，而物理单位更容易表达有实际意义的误差范围；游戏灵敏度匹配通常也没有必要精确到单个 raw count。常规 360° 测量可使用 `cm`，距离较短时使用 `mm`，`raw` 则主要用于检查底层输入数据。
+跨游戏灵敏度比较使用水平 X 结果，并应始终采用相同方向，或者比较结果的绝对值；Y 结果可用于发现移动过程中的垂直偏移。实际匹配更建议选择合适的物理单位：raw counts 中少量波动会表现为较大的整数差值，而物理单位更容易表达有实际意义的误差范围；游戏灵敏度匹配通常也没有必要精确到单个 raw count。常规 360° 测量可使用 `cm`，距离较短时使用 `mm`，`raw` 则主要用于检查底层输入数据。
 
 物理距离通过所选 Reference DPI 换算：
 
@@ -549,7 +551,7 @@ Windows 将 `RAWMOUSE::lLastX` 和 `lLastY` 定义为 X/Y 方向的有符号位�
 - 仅支持 Windows 10 和 Windows 11。
 - 只测量相对鼠标报告；绝对坐标设备会被忽略。
 - 所有相对鼠标设备的输入会被合并，不能单独选择某只鼠标。
-- 界面只显示水平位移。
+- 界面同时显示 X 与 Y 位移；跨游戏灵敏度匹配使用水平 X 结果。
 - 程序不会识别当前游戏、推断游戏设置或修改游戏配置文件。
 - 测量不会保存或导出；开始新记录时会替换之前的结果。
 - 某些游戏、反作弊系统、远程桌面、虚拟机、设备驱动或独占输入配置可能阻止后台 Raw Input 或录制按键控制正常工作。

@@ -76,6 +76,15 @@ namespace {
         const wchar_t* label;
     };
 
+    struct ValueLayoutCache {
+        ComPtr<IDWriteTextLayout> layout;
+        double raw_count = std::numeric_limits<double>::quiet_NaN();
+        int reference_dpi = 0;
+        Unit unit = Unit::raw;
+        float width = 0.0f;
+        float height = 0.0f;
+    };
+
     constexpr std::array<DpiMenuEntry, 7> kDpiMenuEntries{{
         {kCommandDpi100, 100, L"100"},
         {kCommandDpi400, 400, L"400"},
@@ -136,12 +145,7 @@ namespace {
         ComPtr<ID2D1SolidColorBrush> status_fill_brush;
         ComPtr<ID2D1SolidColorBrush> status_text_brush;
 
-        ComPtr<IDWriteTextLayout> value_layout;
-        double cached_raw_dx = std::numeric_limits<double>::quiet_NaN();
-        int cached_reference_dpi = 0;
-        Unit cached_unit = Unit::raw;
-        float cached_value_width = 0.0f;
-        float cached_value_height = 0.0f;
+        std::array<ValueLayoutCache, 2> value_layouts;
 
         ~UiState() {
             if (root_menu != nullptr) {
@@ -258,7 +262,7 @@ namespace {
         if (FAILED(result)) return result;
         result = create_text_format(state.write_factory.Get(), 14.0f, DWRITE_FONT_WEIGHT_SEMI_BOLD, DWRITE_TEXT_ALIGNMENT_CENTER, DWRITE_PARAGRAPH_ALIGNMENT_CENTER, state.status_format.GetAddressOf());
         if (FAILED(result)) return result;
-        result = create_text_format(state.write_factory.Get(), 64.0f, DWRITE_FONT_WEIGHT_SEMI_BOLD, DWRITE_TEXT_ALIGNMENT_CENTER, DWRITE_PARAGRAPH_ALIGNMENT_CENTER, state.value_format.GetAddressOf());
+        result = create_text_format(state.write_factory.Get(), 48.0f, DWRITE_FONT_WEIGHT_SEMI_BOLD, DWRITE_TEXT_ALIGNMENT_CENTER, DWRITE_PARAGRAPH_ALIGNMENT_CENTER, state.value_format.GetAddressOf());
         if (FAILED(result)) return result;
         result = create_text_format(state.write_factory.Get(), 13.0f, DWRITE_FONT_WEIGHT_SEMI_BOLD, DWRITE_TEXT_ALIGNMENT_CENTER, DWRITE_PARAGRAPH_ALIGNMENT_CENTER, state.label_format.GetAddressOf());
         if (FAILED(result)) return result;
@@ -454,13 +458,12 @@ namespace {
         state.render_target->DrawRoundedRectangle(card, state.border_brush.Get(), 1.0f);
     }
 
-    HRESULT update_value_layout(UiState& state, float width, float height) noexcept {
-        const double raw_dx = public_data::accumulated_muzmov_dx;
-        if (state.value_layout != nullptr && state.cached_raw_dx == raw_dx && state.cached_reference_dpi == state.reference_dpi && state.cached_unit == state.unit && state.cached_value_width == width && state.cached_value_height == height) {
+    HRESULT update_value_layout(UiState& state, ValueLayoutCache& cache, double raw_count, float width, float height) noexcept {
+        if (cache.layout != nullptr && cache.raw_count == raw_count && cache.reference_dpi == state.reference_dpi && cache.unit == state.unit && cache.width == width && cache.height == height) {
             return S_OK;
         }
 
-        const double value = normalize_display_value(convert_distance(raw_dx, state.reference_dpi, state.unit));
+        const double value = normalize_display_value(convert_distance(raw_count, state.reference_dpi, state.unit));
 
         wchar_t text[128]{};
         const int written = swprintf_s(text, L"%.3f %ls", value, unit_name(state.unit));
@@ -477,20 +480,48 @@ namespace {
         );
         if (FAILED(result)) return result;
 
+        constexpr float default_value_font_size = 48.0f;
+        constexpr float default_unit_font_size = 18.0f;
+        constexpr float minimum_value_font_size = 20.0f;
+        constexpr float minimum_unit_font_size = 9.0f;
+
         const wchar_t* separator = std::wcschr(text, L' ');
-        if (separator != nullptr) {
-            const UINT32 unit_start = static_cast<UINT32>((separator - text) + 1);
-            const DWRITE_TEXT_RANGE unit_range{unit_start, static_cast<UINT32>(written) - unit_start};
-            layout->SetFontSize(24.0f, unit_range);
-            layout->SetFontWeight(DWRITE_FONT_WEIGHT_SEMI_BOLD, unit_range);
+        if (separator == nullptr) return E_FAIL;
+
+        const UINT32 separator_index = static_cast<UINT32>(separator - text);
+        const UINT32 unit_start = separator_index + 1;
+        const DWRITE_TEXT_RANGE value_range{0, separator_index};
+        const DWRITE_TEXT_RANGE unit_range{unit_start, static_cast<UINT32>(written) - unit_start};
+        result = layout->SetFontSize(default_value_font_size, value_range);
+        if (FAILED(result)) return result;
+        result = layout->SetFontSize(default_unit_font_size, unit_range);
+        if (FAILED(result)) return result;
+        result = layout->SetFontWeight(DWRITE_FONT_WEIGHT_SEMI_BOLD, unit_range);
+        if (FAILED(result)) return result;
+
+        DWRITE_TEXT_METRICS metrics{};
+        result = layout->GetMetrics(&metrics);
+        if (FAILED(result)) return result;
+
+        const float usable_width = std::max(1.0f, width - 4.0f);
+        const float usable_height = std::max(1.0f, height - 2.0f);
+        const float width_scale = metrics.widthIncludingTrailingWhitespace > usable_width ? usable_width / metrics.widthIncludingTrailingWhitespace : 1.0f;
+        const float height_scale = metrics.height > usable_height ? usable_height / metrics.height : 1.0f;
+        const float scale = std::min(width_scale, height_scale);
+        if (scale < 1.0f) {
+            constexpr float fit_safety_factor = 0.9f;
+            result = layout->SetFontSize(std::max(minimum_value_font_size, default_value_font_size * scale * fit_safety_factor), value_range);
+            if (FAILED(result)) return result;
+            result = layout->SetFontSize(std::max(minimum_unit_font_size, default_unit_font_size * scale * fit_safety_factor), unit_range);
+            if (FAILED(result)) return result;
         }
 
-        state.value_layout = std::move(layout);
-        state.cached_raw_dx = raw_dx;
-        state.cached_reference_dpi = state.reference_dpi;
-        state.cached_unit = state.unit;
-        state.cached_value_width = width;
-        state.cached_value_height = height;
+        cache.layout = std::move(layout);
+        cache.raw_count = raw_count;
+        cache.reference_dpi = state.reference_dpi;
+        cache.unit = state.unit;
+        cache.width = width;
+        cache.height = height;
         return S_OK;
     }
 
@@ -538,12 +569,34 @@ namespace {
         const float settings_top = main_card.bottom - settings_height;
         state.render_target->DrawLine(D2D1::Point2F(main_card.left + inner_padding, settings_top), D2D1::Point2F(main_card.right - inner_padding, settings_top), state.border_brush.Get(), 1.0f);
 
-        const D2D1_RECT_F value_bounds = D2D1::RectF(main_card.left + inner_padding, status_bounds.bottom + 3.0f, main_card.right - inner_padding, settings_top - 2.0f);
-        if (SUCCEEDED(update_value_layout(state, value_bounds.right - value_bounds.left, value_bounds.bottom - value_bounds.top))) {
-            state.render_target->DrawTextLayout(D2D1::Point2F(value_bounds.left, value_bounds.top), state.value_layout.Get(), state.primary_text_brush.Get(), D2D1_DRAW_TEXT_OPTIONS_CLIP);
+        const float center_x = (main_card.left + main_card.right) * 0.5f;
+        const D2D1_RECT_F measurement_bounds = D2D1::RectF(main_card.left + inner_padding, status_bounds.bottom + 3.0f, main_card.right - inner_padding, settings_top - 2.0f);
+        const float measurement_divider_top = measurement_bounds.top + 8.0f;
+        const float measurement_divider_bottom = measurement_bounds.bottom - 8.0f;
+        if (measurement_divider_bottom > measurement_divider_top) {
+            state.render_target->DrawLine(D2D1::Point2F(center_x, measurement_divider_top), D2D1::Point2F(center_x, measurement_divider_bottom), state.border_brush.Get(), 1.0f);
         }
 
-        const float center_x = (main_card.left + main_card.right) * 0.5f;
+        constexpr float axis_gap = 14.0f;
+        const std::array<D2D1_RECT_F, 2> axis_bounds{
+            D2D1::RectF(measurement_bounds.left, measurement_bounds.top, center_x - axis_gap, measurement_bounds.bottom),
+            D2D1::RectF(center_x + axis_gap, measurement_bounds.top, measurement_bounds.right, measurement_bounds.bottom),
+        };
+        constexpr std::array<const wchar_t*, 2> axis_labels{L"X / HORIZONTAL", L"Y / VERTICAL"};
+        const std::array<double, 2> raw_counts{public_data::accumulated_muzmov_dx, public_data::accumulated_muzmov_dy};
+
+        const float axis_label_top = measurement_bounds.top + 1.0f;
+        const float axis_label_bottom = std::min(measurement_bounds.bottom, axis_label_top + 18.0f);
+        for (size_t index = 0; index < axis_bounds.size(); ++index) {
+            const D2D1_RECT_F label_bounds = D2D1::RectF(axis_bounds[index].left, axis_label_top, axis_bounds[index].right, axis_label_bottom);
+            draw_text(state, axis_labels[index], state.label_format.Get(), label_bounds, state.secondary_text_brush.Get());
+
+            const D2D1_RECT_F axis_value_bounds = D2D1::RectF(axis_bounds[index].left, axis_label_bottom, axis_bounds[index].right, axis_bounds[index].bottom);
+            if (SUCCEEDED(update_value_layout(state, state.value_layouts[index], raw_counts[index], axis_value_bounds.right - axis_value_bounds.left, axis_value_bounds.bottom - axis_value_bounds.top))) {
+                state.render_target->DrawTextLayout(D2D1::Point2F(axis_value_bounds.left, axis_value_bounds.top), state.value_layouts[index].layout.Get(), state.primary_text_brush.Get(), D2D1_DRAW_TEXT_OPTIONS_CLIP);
+            }
+        }
+
         state.render_target->DrawLine(D2D1::Point2F(center_x, settings_top + 12.0f), D2D1::Point2F(center_x, main_card.bottom - 12.0f), state.border_brush.Get(), 1.0f);
 
         const D2D1_RECT_F dpi_label_bounds = D2D1::RectF(main_card.left + inner_padding, settings_top + 7.0f, center_x - 12.0f, settings_top + 27.0f);
