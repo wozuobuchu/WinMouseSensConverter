@@ -104,6 +104,9 @@ namespace {
         bool redraw_dirty = true;
         UINT dpi = USER_DEFAULT_SCREEN_DPI;
         config::UserConfig* user_config = nullptr;
+        std::array<wchar_t, 64> recording_key_name{L'F', L'1', L'\0'};
+        UINT32 recording_key_name_length = 2;
+        float shortcut_badge_width = 48.0f;
 
         int reference_dpi = 800;
         UINT reference_dpi_command = kCommandDpi800;
@@ -264,6 +267,68 @@ namespace {
         if (FAILED(result)) return result;
 
         return state.body_format->SetWordWrapping(DWRITE_WORD_WRAPPING_WRAP);
+    }
+
+    constexpr bool uses_extended_key_name(uint16_t virtual_key) noexcept {
+        switch (virtual_key) {
+            case VK_CANCEL:
+            case VK_RCONTROL:
+            case VK_RMENU:
+            case VK_PRIOR:
+            case VK_NEXT:
+            case VK_END:
+            case VK_HOME:
+            case VK_LEFT:
+            case VK_UP:
+            case VK_RIGHT:
+            case VK_DOWN:
+            case VK_SNAPSHOT:
+            case VK_INSERT:
+            case VK_DELETE:
+            case VK_LWIN:
+            case VK_RWIN:
+            case VK_APPS:
+            case VK_DIVIDE:
+            case VK_NUMLOCK:
+            case VK_SLEEP:
+                return true;
+            default:
+                return false;
+        }
+    }
+
+    static_assert(uses_extended_key_name(VK_NEXT));
+    static_assert(uses_extended_key_name(VK_RCONTROL));
+    static_assert(!uses_extended_key_name(VK_F1));
+
+    void initialize_recording_key_display(UiState& state, uint16_t recording_key) noexcept {
+        const UINT scan_code = MapVirtualKeyW(recording_key, MAPVK_VK_TO_VSC_EX);
+        LONG key_name_parameter = static_cast<LONG>((scan_code & 0xFFu) << 16);
+        if ((scan_code & 0xFF00u) != 0 || uses_extended_key_name(recording_key)) key_name_parameter |= 1L << 24;
+
+        const int length = scan_code == 0 ? 0 : GetKeyNameTextW(key_name_parameter, state.recording_key_name.data(), static_cast<int>(state.recording_key_name.size()));
+        if (length > 0) {
+            state.recording_key_name_length = static_cast<UINT32>(length);
+        } else {
+            const int written = swprintf_s(state.recording_key_name.data(), state.recording_key_name.size(), L"VK 0x%02X", static_cast<unsigned int>(recording_key));
+            state.recording_key_name_length = written > 0 ? static_cast<UINT32>(written) : 0;
+        }
+
+        ComPtr<IDWriteTextLayout> layout;
+        const HRESULT layout_result = state.write_factory->CreateTextLayout(
+            state.recording_key_name.data(),
+            state.recording_key_name_length,
+            state.status_format.Get(),
+            512.0f,
+            38.0f,
+            layout.GetAddressOf()
+        );
+        if (FAILED(layout_result)) return;
+
+        DWRITE_TEXT_METRICS metrics{};
+        if (SUCCEEDED(layout->GetMetrics(&metrics))) {
+            state.shortcut_badge_width = std::max(48.0f, metrics.widthIncludingTrailingWhitespace + 24.0f);
+        }
     }
 
     void discard_device_resources(UiState& state) noexcept {
@@ -494,9 +559,9 @@ namespace {
         const float shortcut_size = 38.0f;
         const float shortcut_left = instruction_card.left + 18.0f;
         const float shortcut_top = instruction_card.top + (instruction_height - shortcut_size) * 0.5f;
-        const D2D1_RECT_F shortcut_badge = D2D1::RectF(shortcut_left, shortcut_top, shortcut_left + 48.0f, shortcut_top + shortcut_size);
+        const D2D1_RECT_F shortcut_badge = D2D1::RectF(shortcut_left, shortcut_top, shortcut_left + state.shortcut_badge_width, shortcut_top + shortcut_size);
         state.render_target->FillRoundedRectangle(D2D1::RoundedRect(shortcut_badge, 10.0f, 10.0f), state.accent_brush.Get());
-        draw_text(state, L"F1", state.status_format.Get(), shortcut_badge, state.surface_brush.Get());
+        draw_text(state, state.recording_key_name.data(), state.status_format.Get(), shortcut_badge, state.surface_brush.Get());
 
         const float instruction_left = shortcut_badge.right + 18.0f;
         draw_text(state, L"Start / stop recording", state.shortcut_format.Get(), D2D1::RectF(instruction_left, instruction_card.top + 8.0f, instruction_card.right - 16.0f, instruction_card.top + 34.0f), state.primary_text_brush.Get());
@@ -969,6 +1034,7 @@ namespace ui {
                 show_startup_rendering_error();
                 return nullptr;
             }
+            initialize_recording_key_display(*state, user_config.recording_key);
 
             state->root_menu = create_main_menu();
             if (state->root_menu == nullptr) return nullptr;

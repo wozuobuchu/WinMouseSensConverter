@@ -43,8 +43,8 @@ int WINAPI WinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, _
             DispatchMessageW(&msg);
         }
 
-        // Apply new F1 state transitions before attributing the pending mouse snapshot.
-        const bool keyboard_changed = main_loop::pull_msg_kbd();
+        // Apply recording-key state transitions before attributing the pending mouse snapshot.
+        const bool keyboard_changed = main_loop::pull_msg_kbd(user_config.recording_key);
         const bool mouse_changed = main_loop::pull_msg_mouse();
         const bool changed = keyboard_changed || mouse_changed;
 

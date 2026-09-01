@@ -31,6 +31,7 @@ namespace config {
     struct UserConfig {
         int reference_dpi = 800;
         OutputUnit unit = OutputUnit::inch;
+        uint16_t recording_key = VK_F1;
     };
 
     namespace detail {
@@ -72,6 +73,36 @@ namespace config {
             return std::nullopt;
         }
 
+        constexpr std::optional<uint16_t> parse_recording_key(std::string_view text) noexcept {
+            unsigned int base = 10;
+            if (text.starts_with("0x") || text.starts_with("0X")) {
+                base = 16;
+                text.remove_prefix(2);
+            }
+            if (text.empty()) return std::nullopt;
+
+            unsigned int value = 0;
+            for (const char character : text) {
+                unsigned int digit = 0;
+                if (character >= '0' && character <= '9') {
+                    digit = static_cast<unsigned int>(character - '0');
+                } else if (base == 16 && character >= 'a' && character <= 'f') {
+                    digit = static_cast<unsigned int>(character - 'a') + 10;
+                } else if (base == 16 && character >= 'A' && character <= 'F') {
+                    digit = static_cast<unsigned int>(character - 'A') + 10;
+                } else {
+                    return std::nullopt;
+                }
+
+                if (digit >= base) return std::nullopt;
+                value = value * base + digit;
+                if (value > 254) return std::nullopt;
+            }
+
+            if (value == 0) return std::nullopt;
+            return static_cast<uint16_t>(value);
+        }
+
         constexpr std::string_view unit_name(OutputUnit unit) noexcept {
             switch (unit) {
                 case OutputUnit::raw:
@@ -97,6 +128,7 @@ namespace config {
             UserConfig parsed{};
             bool found_reference_dpi = false;
             bool found_unit = false;
+            bool found_recording_key = false;
             size_t position = 0;
 
             while (position <= text.size()) {
@@ -126,6 +158,12 @@ namespace config {
                         if (!unit.has_value()) return std::nullopt;
                         parsed.unit = *unit;
                         found_unit = true;
+                    } else if (key == "recording_key") {
+                        if (found_recording_key) return std::nullopt;
+                        const std::optional<uint16_t> recording_key = parse_recording_key(value);
+                        if (!recording_key.has_value()) return std::nullopt;
+                        parsed.recording_key = *recording_key;
+                        found_recording_key = true;
                     }
                 }
 
@@ -133,14 +171,25 @@ namespace config {
                 position = newline + 1;
             }
 
-            if (!found_reference_dpi || !found_unit) return std::nullopt;
+            if (!found_reference_dpi || !found_unit || !found_recording_key) return std::nullopt;
             return parsed;
         }
 
-        constexpr bool parses_as(std::string_view text, int reference_dpi, OutputUnit unit) noexcept {
+        constexpr bool parses_as(std::string_view text, int reference_dpi, OutputUnit unit, uint16_t recording_key) noexcept {
             const std::optional<UserConfig> parsed = parse_configuration(text);
-            return parsed.has_value() && parsed->reference_dpi == reference_dpi && parsed->unit == unit;
+            return parsed.has_value() && parsed->reference_dpi == reference_dpi && parsed->unit == unit && parsed->recording_key == recording_key;
         }
+
+        static_assert(parses_as("reference_dpi=800\nunit=inch\nrecording_key=0x70", 800, OutputUnit::inch, VK_F1));
+        static_assert(parses_as("\n recording_key = 112 \n unit = cm \n reference_dpi = 1200 \n", 1200, OutputUnit::cm, VK_F1));
+        static_assert(parses_as("unit=raw\r\nrecording_key=0XFE\r\nreference_dpi=1\r\n", 1, OutputUnit::raw, 254));
+        static_assert(parses_as("reference_dpi=999999\nunit=m\nrecording_key=0x4a", 999999, OutputUnit::m, 'J'));
+        static_assert(!parse_configuration("reference_dpi=800\nunit=inch").has_value());
+        static_assert(!parse_configuration("reference_dpi=800\nunit=inch\nrecording_key=0").has_value());
+        static_assert(!parse_configuration("reference_dpi=800\nunit=inch\nrecording_key=255").has_value());
+        static_assert(!parse_configuration("reference_dpi=800\nunit=inch\nrecording_key=-1").has_value());
+        static_assert(!parse_configuration("reference_dpi=800\nunit=inch\nrecording_key=0xGG").has_value());
+        static_assert(!parse_configuration("reference_dpi=800\nunit=inch\nrecording_key=0x70\nrecording_key=0x71").has_value());
 
         inline std::optional<std::filesystem::path> config_directory() noexcept {
             PWSTR local_app_data = nullptr;
@@ -191,7 +240,7 @@ namespace config {
         }
 
         inline bool valid(const UserConfig& user_config) noexcept {
-            return user_config.reference_dpi >= 1 && user_config.reference_dpi <= 999999 && !unit_name(user_config.unit).empty();
+            return user_config.reference_dpi >= 1 && user_config.reference_dpi <= 999999 && !unit_name(user_config.unit).empty() && user_config.recording_key >= 1 && user_config.recording_key <= 254;
         }
 
         inline std::optional<std::string> serialize(const UserConfig& user_config) noexcept {
@@ -202,6 +251,10 @@ namespace config {
                 contents += std::to_string(user_config.reference_dpi);
                 contents += "\r\nunit = ";
                 contents += unit_name(user_config.unit);
+                constexpr char hex_digits[] = "0123456789ABCDEF";
+                contents += "\r\nrecording_key = 0x";
+                contents += hex_digits[(user_config.recording_key >> 4) & 0x0F];
+                contents += hex_digits[user_config.recording_key & 0x0F];
                 contents += "\r\n";
                 return contents;
             } catch (...) {

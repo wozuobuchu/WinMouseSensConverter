@@ -49,7 +49,7 @@ FONT 9, "Segoe UI", 0, 0, 0x1
 BEGIN
     ICON            IDI_WINMOUSESENSCONVERTER,IDC_STATIC,18,18,32,32
     LTEXT           "WinMouseSensConverter",IDC_STATIC,62,17,278,13,SS_NOPREFIX
-    LTEXT           "Version 1.0.0.2",IDC_STATIC,62,34,278,10,SS_NOPREFIX
+    LTEXT           "Version 1.0.0.3",IDC_STATIC,62,34,278,10,SS_NOPREFIX
     LTEXT           "Measures horizontal raw mouse movement and converts it using a reference DPI.",IDC_STATIC,18,61,322,20,SS_NOPREFIX
     LTEXT           "wozuobuchu  |  Copyright (C) 2026",IDC_STATIC,18,88,322,10,SS_NOPREFIX
     LTEXT           "https://github.com/wozuobuchu/WinMouseSensConverter",IDC_STATIC,18,106,322,10,SS_NOPREFIX
@@ -65,9 +65,9 @@ BEGIN
     LTEXT           "How to use",IDC_STATIC,18,16,384,13,SS_NOPREFIX
     LTEXT           "1. Accept the administrator permission prompt when the application starts.",IDC_STATIC,18,39,384,11,SS_NOPREFIX
     LTEXT           "2. In Options, choose your mouse's actual ReferenceDPI and the desired output Unit.",IDC_STATIC,18,57,384,11,SS_NOPREFIX
-    LTEXT           "3. Press F1 to start recording. A new recording clears the previous measurement.",IDC_STATIC,18,75,384,11,SS_NOPREFIX
+    LTEXT           "3. Press the configured key to start. A new recording clears the previous measurement.",IDC_STATIC,18,75,384,11,SS_NOPREFIX
     LTEXT           "4. Move the mouse horizontally. Movement to the right is positive; movement to the left is negative.",IDC_STATIC,18,93,384,20,SS_NOPREFIX
-    LTEXT           "5. Press F1 again to stop. The final measurement remains visible.",IDC_STATIC,18,120,384,11,SS_NOPREFIX
+    LTEXT           "5. Press the configured key again to stop. The final measurement remains visible.",IDC_STATIC,18,120,384,11,SS_NOPREFIX
     LTEXT           "Measurement details",IDC_STATIC,18,149,384,11,SS_NOPREFIX
     LTEXT           "Only horizontal movement is displayed. Vertical movement does not affect the shown value.",IDC_STATIC,18,167,384,11,SS_NOPREFIX
     LTEXT           "Distance in inches = horizontal raw counts / ReferenceDPI. Metric units are converted from inches.",IDC_STATIC,18,185,384,20,SS_NOPREFIX
@@ -158,8 +158,8 @@ END
 //
 
 VS_VERSION_INFO VERSIONINFO
- FILEVERSION 1,0,0,2
- PRODUCTVERSION 1,0,0,2
+ FILEVERSION 1,0,0,3
+ PRODUCTVERSION 1,0,0,3
  FILEFLAGSMASK 0x3fL
 #ifdef _DEBUG
  FILEFLAGS 0x1L
@@ -176,12 +176,12 @@ BEGIN
         BEGIN
             VALUE "CompanyName", "wozuobuchu"
             VALUE "FileDescription", "WinMouseSensConverter"
-            VALUE "FileVersion", "1.0.0.2"
+            VALUE "FileVersion", "1.0.0.3"
             VALUE "InternalName", "WinMouseSensConverter.exe"
             VALUE "LegalCopyright", "Copyright (C) 2026"
             VALUE "OriginalFilename", "WinMouseSensConverter.exe"
             VALUE "ProductName", "WinMouseSensConverter"
-            VALUE "ProductVersion", "1.0.0.2"
+            VALUE "ProductVersion", "1.0.0.3"
         END
     END
     BLOCK "VarFileInfo"

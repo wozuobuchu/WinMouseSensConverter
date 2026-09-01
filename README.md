@@ -19,7 +19,7 @@
 
 WinMouseSensConverter measures how far your mouse moves while you rotate the in-game camera through a known horizontal angle. By repeating the same measurement in another game, you can tune that game's sensitivity until both games require the same mouse travel for the same camera rotation.
 
-The most common measurement is a full 360-degree turn, usually described as **counts/360°** or **cm/360°**. The application records the mouse's raw horizontal counts in the background, so you can start and stop a measurement with `F1` while the game remains focused.
+The most common measurement is a full 360-degree turn, usually described as **counts/360°** or **cm/360°**. The application records the mouse's raw horizontal counts in the background, so you can start and stop a measurement with the configured recording key (`F1` by default) while the game remains focused.
 
 This is an **empirical measurement and calibration tool**, not a database-driven converter. It does not know each game's internal sensitivity formula and does not change game settings automatically. That makes it useful even when two games use different engines, scales, rounding rules, or undocumented sensitivity behavior.
 
@@ -27,13 +27,13 @@ This is an **empirical measurement and calibration tool**, not a database-driven
 
 - Native Windows desktop application written in C++20.
 - Buffered Raw Input capture on dedicated keyboard and mouse message threads.
-- Background `F1` control without switching away from the game.
+- Configurable background recording control (`F1` by default) without switching away from the game.
 - Different notification sounds when recording starts and stops.
 - Starting a new recording clears the previous measurement; stopping keeps the final value visible.
 - Horizontal measurement only: movement to the right is positive and movement to the left is negative.
 - Output in raw counts, inches, millimeters, centimeters, decimeters, or meters.
 - Reference DPI presets: `100`, `400`, `800`, `1200`, `1600`, `3200`, and `10000`, plus a modeless `Custom...` entry for values from `1` to `999999`.
-- The selected Reference DPI and output unit are restored from a per-user configuration file.
+- The selected Reference DPI, output unit, and recording key are restored from a per-user configuration file.
 - Responsive, Per-Monitor-DPI-aware Direct2D/DirectWrite interface.
 - Modeless About and Instruction windows that do not block input collection.
 - No game injection, process-memory access, network access, telemetry, or saved measurement history; only user configuration is written.
@@ -47,9 +47,9 @@ This is an **empirical measurement and calibration tool**, not a database-driven
 2. Start WinMouseSensConverter and accept the administrator permission prompt.
 3. Open **Options → ReferenceDPI** and select the mouse's actual DPI. Choose **Custom...** to enter an integer from `1` to `999999`; invalid input is ignored and the last valid DPI remains active. For in-game measurement, choose a physical-distance unit suited to the test—usually `cm` for 360° measurements or `mm` for shorter distances. Use `raw` mainly when you need to inspect the underlying counts.
 4. In the baseline game, choose a repeatable camera state and a clear reference point. A wall corner, vertical seam, or other thin landmark works better than a broad object.
-5. Aim at the reference point, place the mouse at a marked starting position, and press `F1`. The start sound confirms that recording is active and the old measurement has been cleared.
+5. Aim at the reference point, place the mouse at a marked starting position, and press the recording key shown in the application window (`F1` by default). The start sound confirms that recording is active and the old measurement has been cleared.
 6. Rotate horizontally through a known angle—normally exactly 360°—until the crosshair returns to the same reference point.
-7. Press `F1` again. The stop sound confirms that recording has ended; the measurement remains visible.
+7. Press the configured recording key again. The stop sound confirms that recording has ended; the measurement remains visible.
 8. Repeat the trial several times in the same direction. Use the median of the consistent results as the baseline.
 9. In the target game, reproduce the same camera state and angle. Adjust its sensitivity until the selected physical-distance measurement matches the baseline within a practical tolerance.
 
@@ -57,7 +57,7 @@ Move or lift the mouse back to its starting position **while recording is off**.
 
 ### Configuration
 
-The selected Reference DPI and output unit are loaded at startup from:
+The selected Reference DPI, output unit, and recording key are loaded at startup from:
 
 ```text
 %LOCALAPPDATA%\WinMouseSensConverter\config.ini
@@ -68,11 +68,14 @@ The file is UTF-8 text with the following format:
 ```ini
 reference_dpi = 800
 unit = inch
+recording_key = 0x70
 ```
 
 Valid units are `raw`, `inch`, `mm`, `cm`, `dm`, and `m`. Blank lines and spaces or tabs around lines, keys, `=`, and values are allowed; both CRLF and LF line endings are accepted. Key names and unit values are case-sensitive. Unknown extra fields are ignored.
 
-If the file is missing, unreadable, incomplete, duplicated, or contains an invalid DPI or unit, the application uses the defaults (`800` and `inch`) and attempts to replace it with a new default file. Changes are saved when the application exits normally. Configuration failures never prevent startup and no measurement values are saved.
+`recording_key` is a Windows Virtual-Key value from `1` through `254`. Decimal values such as `112` and hexadecimal values such as `0x70` or `0X70` are accepted; the application saves the value as two-digit uppercase hexadecimal. The main window displays the system name for the configured key, or `VK 0xNN` when Windows cannot provide one. Only values actually emitted by keyboard Raw Input can trigger recording, and configuration changes take effect on the next application start.
+
+If the file is missing, unreadable, incomplete, duplicated, or contains an invalid DPI, unit, or recording key, the application uses the defaults (`800`, `inch`, and `F1`) and attempts to replace it with a new default file. An older configuration without `recording_key` is therefore reset in full. Changes are saved when the application exits normally. Configuration failures never prevent startup and no measurement values are saved.
 
 ### A reliable cross-game workflow
 
@@ -164,9 +167,9 @@ This guarantee concerns the application's concurrent accumulation path. It does 
 
 #### Keyboard control and measurement boundaries
 
-The keyboard thread also uses a message-only Raw Input target, registered with `RIDEV_INPUTSINK` so it receives background Raw Input without suppressing normal legacy keyboard messages. It normalizes left/right modifier keys, suppresses repeated state transitions, and sends key events through a single-producer/single-consumer Boost.Lockfree queue with a capacity of 2048 events. The main thread consumes the queue and reacts only to `F1` key-down transitions.
+The keyboard thread also uses a message-only Raw Input target, registered with `RIDEV_INPUTSINK` so it receives background Raw Input without suppressing normal legacy keyboard messages. It normalizes left/right modifier keys, suppresses repeated state transitions, and sends key events through a single-producer/single-consumer Boost.Lockfree queue with a capacity of 2048 events. The main thread consumes the queue and reacts only to key-down transitions matching the configured recording key. Generic Shift, Control, and Alt VK values match either side; side-specific VK values match only that side.
 
-At each UI polling boundary, new `F1` events are applied before pending mouse movement is sampled. Starting clears the accumulated measurement and then attributes the pending mouse snapshot to the new recording; stopping turns recording off before that pending snapshot is drained and discarded. Because keyboard and mouse are independent Raw Input streams rather than one timestamp-merged stream, the operator should still avoid moving the mouse at the exact instant `F1` is pressed.
+At each UI polling boundary, new recording-key events are applied before pending mouse movement is sampled. Starting clears the accumulated measurement and then attributes the pending mouse snapshot to the new recording; stopping turns recording off before that pending snapshot is drained and discarded. Because keyboard and mouse are independent Raw Input streams rather than one timestamp-merged stream, the operator should still avoid moving the mouse at the exact instant the configured key is pressed.
 
 ### Architecture
 
@@ -178,7 +181,7 @@ flowchart LR
 
     HIDK["Keyboard HID<br/>键盘设备"] --> KT["Keyboard Raw Input thread<br/>键盘输入线程"]
     KT -->|"deduplicated key events<br/>去重按键事件"| Q["Boost SPSC queue<br/>Boost 单生产者/单消费者队列"]
-    Q -->|"F1 key-down"| ML
+    Q -->|"configured key-down<br/>配置按键按下"| ML
 
     ML --> RS["Recording state and totals<br/>记录状态与累计值"]
     RS --> UI["Direct2D / DirectWrite UI<br/>Direct2D / DirectWrite 界面"]
@@ -200,7 +203,7 @@ Small differences between repeated raw-count measurements are normal. They do no
 | Category | Possible causes | Effect |
 | --- | --- | --- |
 | Reference-angle error | The crosshair does not start and finish on exactly the same pixel; the landmark is wide; the player overshoots and corrects; animation or camera sway moves the view. | The game rotates through a slightly different angle on each trial. |
-| Human timing | `F1` is pressed while the mouse is still moving; the start/stop sound is anticipated; the two independent input streams meet the UI at different polling boundaries. | A few boundary packets can belong to the unintended side of the measurement. |
+| Human timing | The recording key is pressed while the mouse is still moving; the start/stop sound is anticipated; the two independent input streams meet the UI at different polling boundaries. | A few boundary packets can belong to the unintended side of the measurement. |
 | Mouse path and posture | Wrist/arm posture changes, the mouse yaws during a long sweep, or the physical path becomes an arc rather than a repeatable horizontal line. | Sensor X counts change even if the apparent hand travel is similar. |
 | Lift and reposition | Lift-off/landing generates motion, the mouse is placed at a different angle, or the sensor continues tracking near its lift-off distance. | Extra or missing counts and poor repeatability. |
 | Sensor and surface | Actual CPI differs from the configured DPI; count quantization, sensor noise, angle snapping, smoothing, acceleration, dirty lenses, or an inconsistent pad surface affect reports. | Converted distance can be biased; raw trials can vary. |
@@ -215,7 +218,7 @@ Small differences between repeated raw-count measurements are normal. They do no
 - Let the sensor and wireless connection reach a stable operating state before collecting reference trials.
 - Select a narrow, high-contrast landmark and disable camera bob/sway where possible.
 - Measure 360° or multiple full turns rather than a small angle.
-- Keep the mouse stationary while pressing `F1`, then wait for the sound before moving.
+- Keep the mouse stationary while pressing the configured recording key, then wait for the sound before moving.
 - Reposition only while recording is off.
 - Run several trials and use the median; investigate outliers and a large range instead of hiding them in an average.
 - Calibrate hip-fire, ADS, individual scopes, vehicles, and other camera modes independently when the game gives them separate sensitivity rules.
@@ -227,9 +230,9 @@ Small differences between repeated raw-count measurements are normal. They do no
 - Only relative mouse reports are measured; absolute-position devices are ignored.
 - All relative mouse devices are combined rather than selected individually.
 - Only horizontal movement is displayed.
-- The program does not identify the active game, infer its settings, or write configuration files.
+- The program does not identify the active game, infer its settings, or modify game configuration files.
 - Measurements are not saved or exported; a new recording replaces the previous value.
-- Some games, anti-cheat systems, remote-desktop sessions, virtual machines, device drivers, or exclusive-input configurations may prevent background Raw Input or `F1` control from working as expected.
+- Some games, anti-cheat systems, remote-desktop sessions, virtual machines, device drivers, or exclusive-input configurations may prevent background Raw Input or recording-key control from working as expected.
 - The tool measures angular mouse travel. It cannot make different FOVs, animations, recoil behavior, or aim-assist systems feel identical.
 
 ### Build from source
@@ -296,12 +299,13 @@ Running that executable triggers a Windows UAC prompt because administrator priv
 
 ### Troubleshooting
 
-#### `F1` does not start or stop recording
+#### The configured key does not start or stop recording
 
 - Confirm that the UAC prompt was accepted and the application is still running.
 - Keep the application open; it can receive background input, but it must not be closed.
+- Confirm that the key shown in the main window matches `recording_key` and that its VK value is produced by a keyboard.
 - Check whether the game, an overlay, a keyboard utility, remote desktop, or anti-cheat software is intercepting or suppressing input.
-- Test `F1` on the Windows desktop to separate game compatibility from application startup problems.
+- Test the configured key on the Windows desktop to separate game compatibility from application startup problems.
 
 #### The converted centimeters do not match a ruler
 
@@ -309,7 +313,7 @@ Reference DPI is a mathematical conversion value. A mouse labeled `800 DPI` may 
 
 #### Repeated trials differ by a few counts
 
-This is expected. Endpoint alignment, discrete sensor counts, mouse angle, and start/stop timing all matter. Use longer rotations, keep the mouse stationary at each `F1` press, and compare the median of multiple trials.
+This is expected. Endpoint alignment, discrete sensor counts, mouse angle, and start/stop timing all matter. Use longer rotations, keep the mouse stationary at each recording-key press, and compare the median of multiple trials.
 
 #### The result is negative
 
@@ -342,7 +346,7 @@ WinMouseSensConverter is distributed under the [GNU Affero General Public Licens
 
 WinMouseSensConverter 用来测量玩家在游戏中将视角水平旋转一个已知角度时，鼠标实际移动了多远。只要在另一款游戏中重复相同测量，就可以调整该游戏的灵敏度，直到两款游戏完成相同视角旋转所需的鼠标移动距离一致。
 
-最常见的基准是完整旋转 360°，结果通常称为 **counts/360°** 或 **cm/360°**。程序会在后台记录鼠标的水平原始计数，因此游戏保持焦点时也可以使用 `F1` 开始和停止测量。
+最常见的基准是完整旋转 360°，结果通常称为 **counts/360°** 或 **cm/360°**。程序会在后台记录鼠标的水平原始计数，因此游戏保持焦点时也可以使用配置的录制按键（默认为 `F1`）开始和停止测量。
 
 这是一个基于实测的**测量与校准工具**，而不是依靠游戏数据库的自动换算器。它不了解每款游戏内部的灵敏度公式，也不会自动修改游戏设置。因此，即使两款游戏使用不同引擎、数值范围、舍入规则或未公开的灵敏度算法，也可以通过实际旋转结果进行匹配。
 
@@ -350,13 +354,13 @@ WinMouseSensConverter 用来测量玩家在游戏中将视角水平旋转一个�
 
 - 使用 C++20 编写的原生 Windows 桌面应用。
 - 键盘和鼠标各自由独立消息线程批量读取 Raw Input。
-- 游戏保持前台时，可在后台通过 `F1` 控制记录。
+- 游戏保持前台时，可在后台通过配置按键控制记录，默认按键为 `F1`。
 - 开始与停止记录会播放不同的系统提示音。
 - 开始新记录时自动清除上一次结果；停止后最终结果保持显示。
 - 仅显示水平位移：向右为正，向左为负。
 - 支持 raw counts、英寸、毫米、厘米、分米和米。
 - Reference DPI 预设：`100`、`400`、`800`、`1200`、`1600`、`3200`、`10000`，并提供非模态 `Custom...` 选项，可输入 `1`～`999999`。
-- 所选 Reference DPI 和输出单位会保存到当前用户的配置文件，并在下次启动时恢复。
+- 所选 Reference DPI、输出单位和录制按键会保存到当前用户的配置文件，并在下次启动时恢复。
 - 使用 Direct2D/DirectWrite 渲染，并支持 Per-Monitor DPI 的响应式界面。
 - “关于”和“使用说明”窗口为非模态窗口，不会阻塞输入采集。
 - 不注入游戏、不读取游戏进程内存、不访问网络、不包含遥测，也不保存测量历史；程序只写入用户配置。
@@ -370,9 +374,9 @@ WinMouseSensConverter 用来测量玩家在游戏中将视角水平旋转一个�
 2. 启动 WinMouseSensConverter，并接受管理员权限提示。
 3. 打开 **Options → ReferenceDPI**，选择鼠标的实际 DPI。选择 **Custom...** 可输入 `1`～`999999` 的整数；无效输入会被忽略，并继续使用上一个有效 DPI。游戏内实测时，建议选择与测量距离匹配的物理单位：360° 测量通常使用 `cm`，较短距离可以使用 `mm`；只有需要检查底层计数时才主要使用 `raw`。
 4. 在基准游戏中选择可重复的视角状态和清晰参照点。墙角、垂直接缝等细窄标志通常比宽大的物体更容易精确对齐。
-5. 将准星对准参照点，把鼠标放在标记好的起始位置，然后按下 `F1`。听到开始提示音后，记录已启动，旧结果也已清零。
+5. 将准星对准参照点，把鼠标放在标记好的起始位置，然后按下程序主界面显示的录制按键（默认为 `F1`）。听到开始提示音后，记录已启动，旧结果也已清零。
 6. 水平旋转一个已知角度——通常是精确的 360°——直到准星重新回到同一个参照点。
-7. 再次按下 `F1`。停止提示音表示记录已经结束，最终测量值会保留在界面上。
+7. 再次按下配置的录制按键。停止提示音表示记录已经结束，最终测量值会保留在界面上。
 8. 使用相同方向重复测量多次，以稳定结果的中位数作为基准。
 9. 在目标游戏中复现相同的视角状态和旋转角度，调整灵敏度，直到所选物理距离在合理容差内与基准一致。
 
@@ -380,7 +384,7 @@ WinMouseSensConverter 用来测量玩家在游戏中将视角水平旋转一个�
 
 ### 配置文件
 
-程序启动时会从以下位置读取 Reference DPI 和输出单位：
+程序启动时会从以下位置读取 Reference DPI、输出单位和录制按键：
 
 ```text
 %LOCALAPPDATA%\WinMouseSensConverter\config.ini
@@ -391,11 +395,14 @@ WinMouseSensConverter 用来测量玩家在游戏中将视角水平旋转一个�
 ```ini
 reference_dpi = 800
 unit = inch
+recording_key = 0x70
 ```
 
 合法单位为 `raw`、`inch`、`mm`、`cm`、`dm` 和 `m`。文件可以包含空行，也允许在每行、键名、`=` 和值的两侧使用空格或制表符；CRLF 与 LF 换行均可正常解析。键名和单位值区分大小写，未知的额外字段会被忽略。
 
-如果配置文件不存在、无法读取、缺少必需字段、字段重复，或者 DPI/单位无效，程序会使用默认值（`800` 和 `inch`），并尝试重建默认配置文件。设置会在程序正常退出时保存。配置读写失败不会阻止程序启动，测量结果不会写入配置文件。
+`recording_key` 是 `1`～`254` 的 Windows Virtual-Key 数值。可以使用 `112` 这样的十进制值，也可以使用 `0x70` 或 `0X70` 这样的十六进制值；程序保存时会统一写成两位大写十六进制。主界面会显示该按键的系统名称；如果 Windows 无法提供名称，则显示 `VK 0xNN`。只有键盘 Raw Input 实际产生的 VK 值才能触发录制，手工修改配置后需要重启程序才能生效。
+
+如果配置文件不存在、无法读取、缺少必需字段、字段重复，或者 DPI、单位、录制按键无效，程序会使用默认值（`800`、`inch` 和 `F1`），并尝试重建默认配置文件。因此，不含 `recording_key` 的旧配置会整体重置。设置会在程序正常退出时保存。配置读写失败不会阻止程序启动，测量结果不会写入配置文件。
 
 ### 可靠的跨游戏测量流程
 
@@ -487,9 +494,9 @@ Windows 将 `RAWMOUSE::lLastX` 和 `lLastY` 定义为 X/Y 方向的有符号位�
 
 #### 键盘控制与测量边界
 
-键盘线程也使用 message-only Raw Input 目标，并以 `RIDEV_INPUTSINK` 注册，从而在不抑制普通传统键盘消息的同时接收后台 Raw Input。它会区分左右修饰键、抑制重复状态转换，再通过容量为 2048 的 Boost.Lockfree 单生产者/单消费者队列把按键事件发送给主线程。主线程消费队列，但只响应 `F1` 按下事件。
+键盘线程也使用 message-only Raw Input 目标，并以 `RIDEV_INPUTSINK` 注册，从而在不抑制普通传统键盘消息的同时接收后台 Raw Input。它会区分左右修饰键、抑制重复状态转换，再通过容量为 2048 的 Boost.Lockfree 单生产者/单消费者队列把按键事件发送给主线程。主线程消费队列，但只响应与配置录制键匹配的按下事件。通用 Shift、Control 和 Alt VK 值会匹配左右任意一侧；左右专用 VK 值只匹配对应一侧。
 
-在每次 UI 轮询边界，程序会先应用新的 `F1` 事件，再提取待处理鼠标位移。开始记录会先清空累计值，再把待处理鼠标快照计入新记录；停止记录会先关闭记录，随后提取并丢弃该待处理快照。由于键盘和鼠标是两个独立 Raw Input 数据流，而不是合并时间戳后的统一事件流，实际操作时仍应避免在按下 `F1` 的同一瞬间移动鼠标。
+在每次 UI 轮询边界，程序会先应用新的录制按键事件，再提取待处理鼠标位移。开始记录会先清空累计值，再把待处理鼠标快照计入新记录；停止记录会先关闭记录，随后提取并丢弃该待处理快照。由于键盘和鼠标是两个独立 Raw Input 数据流，而不是合并时间戳后的统一事件流，实际操作时仍应避免在按下配置按键的同一瞬间移动鼠标。
 
 ### 架构
 
@@ -508,7 +515,7 @@ Windows 将 `RAWMOUSE::lLastX` 和 `lLastY` 定义为 X/Y 方向的有符号位�
 | 类别 | 可能原因 | 影响 |
 | --- | --- | --- |
 | 参照角度误差 | 准星没有落在完全相同的像素；参照物太宽；旋转越过目标后又回调；动画或镜头晃动改变视角。 | 每次实际旋转角度略有不同。 |
-| 人为起止时机 | 鼠标尚未静止就按下 `F1`；根据提示音提前动作；两个独立输入流在不同 UI 轮询边界被消费。 | 少量边界数据包可能被归到测量之外或之内。 |
+| 人为起止时机 | 鼠标尚未静止就按下录制按键；根据提示音提前动作；两个独立输入流在不同 UI 轮询边界被消费。 | 少量边界数据包可能被归到测量之外或之内。 |
 | 鼠标轨迹与姿态 | 手腕/手臂姿势变化；长距离移动时鼠标自身发生偏转；实际轨迹变成弧线而不是可重复水平直线。 | 即使手部移动距离看似相近，传感器 X 计数也会变化。 |
 | 抬鼠与复位 | 抬起或落下时产生位移；鼠标以不同角度落下；传感器在接近抬升高度时继续跟踪。 | 产生额外或缺失 counts，降低重复性。 |
 | 传感器与表面 | 实际 CPI 偏离设置值；离散计数量化、传感器噪声、角度修正、平滑、加速度、镜头污渍或鼠标垫表面不一致。 | 物理距离换算产生系统偏差，raw 测量也可能波动。 |
@@ -523,7 +530,7 @@ Windows 将 `RAWMOUSE::lLastX` 和 `lLastY` 定义为 X/Y 方向的有符号位�
 - 开始采集基准前，让传感器和无线连接进入稳定工作状态。
 - 选择细窄、高对比度参照物，并尽量关闭镜头晃动。
 - 测量 360° 或多圈，而不是很小的角度。
-- 按 `F1` 时让鼠标保持静止，听到提示音后再移动。
+- 按配置的录制按键时让鼠标保持静止，听到提示音后再移动。
 - 只在停止记录时复位鼠标。
 - 多次测量并使用中位数；对于异常值或较大极差，应查找原因，而不是用平均值掩盖。
 - 如果游戏为腰射、ADS、各倍率瞄准镜、载具等提供独立规则，应分别校准。
@@ -535,9 +542,9 @@ Windows 将 `RAWMOUSE::lLastX` 和 `lLastY` 定义为 X/Y 方向的有符号位�
 - 只测量相对鼠标报告；绝对坐标设备会被忽略。
 - 所有相对鼠标设备的输入会被合并，不能单独选择某只鼠标。
 - 界面只显示水平位移。
-- 程序不会识别当前游戏、推断游戏设置或修改配置文件。
+- 程序不会识别当前游戏、推断游戏设置或修改游戏配置文件。
 - 测量不会保存或导出；开始新记录时会替换之前的结果。
-- 某些游戏、反作弊系统、远程桌面、虚拟机、设备驱动或独占输入配置可能阻止后台 Raw Input 或 `F1` 控制正常工作。
+- 某些游戏、反作弊系统、远程桌面、虚拟机、设备驱动或独占输入配置可能阻止后台 Raw Input 或录制按键控制正常工作。
 - 本工具匹配的是完成指定视角转动所需的鼠标距离，无法让不同 FOV、动画、后坐力或辅助瞄准系统产生完全相同的主观手感。
 
 ### 从源码编译
@@ -604,12 +611,13 @@ x64\Release\WinMouseSensConverter.exe
 
 ### 常见问题
 
-#### 按下 `F1` 无法开始或停止记录
+#### 配置的按键无法开始或停止记录
 
 - 确认已经接受 UAC 提示，且应用仍在运行。
 - 应用可以在后台接收输入，但不能被关闭。
+- 确认主界面显示的按键与 `recording_key` 一致，并且该 VK 值确实由键盘产生。
 - 检查游戏、覆盖层、键盘工具、远程桌面或反作弊软件是否拦截或抑制了输入。
-- 先在 Windows 桌面测试 `F1`，以区分游戏兼容性问题和应用启动问题。
+- 先在 Windows 桌面测试配置按键，以区分游戏兼容性问题和应用启动问题。
 
 #### 换算出的厘米数与尺子不一致
 
@@ -617,7 +625,7 @@ Reference DPI 是数学换算值。标称 `800 DPI` 的鼠标可能存在可测�
 
 #### 重复测量相差几个 counts
 
-这是正常现象。参照点对齐、传感器离散计数、鼠标角度和起止时机都会产生影响。请使用更长的旋转距离，在每次按下 `F1` 时保持鼠标静止，并比较多次测量的中位数。
+这是正常现象。参照点对齐、传感器离散计数、鼠标角度和起止时机都会产生影响。请使用更长的旋转距离，在每次按下录制按键时保持鼠标静止，并比较多次测量的中位数。
 
 #### 结果为什么是负数？
 
