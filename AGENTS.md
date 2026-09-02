@@ -67,6 +67,7 @@ vcpkg integrate install
 - Preserve the dedicated Raw Input message threads and their single-producer/single-consumer queue design.
 - Keep cross-mode runtime data in `sync.hpp`: the recording flag, current mode, and accumulated X/Y values must not be replaced by a second application-state container.
 - Keep mode renderers isolated under `ui::modes::measurement` and `ui::modes::calibration`; put reusable drawing and formatting in the common UI layer, and dispatch exactly one mode renderer per frame.
+- Keep local include dependencies acyclic. Component implementations must include their interface and direct dependencies instead of an application umbrella header that includes the component interface; avoid reciprocal includes and back-edges between layers.
 - Never perform blocking dialogs, waits, file/network operations, or thread joins in menu handlers or paint paths.
 - Do not perform or request redraws independently from UI event handlers. Events that change visible UI state, including system paint events, must only set `UiState::redraw_dirty = true`; keep actual rendering centralized in the timer-gated end-of-main-loop path.
 - Keep help windows modeless and route their messages through `ui::preprocess_modeless_dialog_message`.

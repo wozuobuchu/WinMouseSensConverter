@@ -2,7 +2,12 @@
 #include "ui_internal.hpp"
 
 #include "Resource.hpp"
-#include "WinMouseSensConverter.hpp"
+
+#include "SYS/low_latency_keyboard.hpp"
+#include "SYS/low_latency_mousemov.hpp"
+
+#include "recording_key.hpp"
+
 #include "sync.hpp"
 
 #include <CommCtrl.h>
@@ -147,12 +152,46 @@ namespace {
         {kCommandRecordingKeyPeriod, VK_OEM_PERIOD, L"PERIOD"},
     }};
 
+    bool pull_msg_kbd(uint16_t recording_key) noexcept {
+        static constexpr size_t kQueueSize = 1024;
+        static rawinput::LowLatencyKeyboard::KeyEvent queue[kQueueSize];
+        const size_t count = rawinput::LowLatencyKeyboard::pop_events<kQueueSize>(queue);
+        bool changed = false;
+
+        for (size_t index = 0; index < count; ++index) {
+            const rawinput::LowLatencyKeyboard::KeyEvent& event = queue[index];
+            if (event.down == 0 || !main_loop::matches_recording_key(recording_key, event.vkey)) continue;
+
+            public_data::on_recording_ = public_data::on_recording_ == 0 ? static_cast<uint8_t>(~0) : 0;
+            if (public_data::on_recording_ != 0) {
+                public_data::accumulated_muzmov_dx = 0.0;
+                public_data::accumulated_muzmov_dy = 0.0;
+            }
+
+            const UINT notification_sound = public_data::on_recording_ != 0 ? MB_ICONASTERISK : MB_ICONHAND;
+            (void)MessageBeep(notification_sound);
+            changed = true;
+        }
+
+        return changed;
+    }
+
+    bool pull_msg_mouse() noexcept {
+        const auto [dx, dy] = rawinput::LowLatencyMouseMov::sample();
+        if (public_data::on_recording_ != 0) {
+            public_data::accumulated_muzmov_dx += static_cast<double>(dx);
+            public_data::accumulated_muzmov_dy += static_cast<double>(dy);
+            return dx != 0 || dy != 0;
+        }
+        return false;
+    }
+
     bool pull_pending_input(UiState& state) noexcept {
         if (state.user_config == nullptr) return false;
 
         // Apply recording-key state transitions before attributing the pending mouse snapshot.
-        const bool keyboard_changed = main_loop::pull_msg_kbd(state.user_config->recording_key);
-        const bool mouse_changed = main_loop::pull_msg_mouse();
+        const bool keyboard_changed = pull_msg_kbd(state.user_config->recording_key);
+        const bool mouse_changed = pull_msg_mouse();
         return keyboard_changed || (public_data::on_recording_ != 0 && mouse_changed);
     }
 
