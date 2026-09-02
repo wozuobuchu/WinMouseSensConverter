@@ -24,13 +24,35 @@ namespace ui::detail {
         HRESULT result = state.write_factory->CreateTextLayout(text, text_length, state.value_format.Get(), std::max(1.0f, width), std::max(1.0f, height), layout.GetAddressOf());
         if (FAILED(result)) return result;
 
+        constexpr float default_value_font_size = 48.0f;
+        constexpr float default_unit_font_size = 18.0f;
+        constexpr float minimum_value_font_size = 20.0f;
+        constexpr float minimum_unit_font_size = 9.0f;
         const wchar_t* separator = std::wcschr(text, L' ');
-        if (separator != nullptr) {
-            const UINT32 unit_start = static_cast<UINT32>(separator - text) + 1;
-            const DWRITE_TEXT_RANGE unit_range{unit_start, static_cast<UINT32>(written) - unit_start};
-            result = layout->SetFontSize(18.0f, unit_range);
+        if (separator == nullptr) return E_FAIL;
+
+        const UINT32 separator_index = static_cast<UINT32>(separator - text);
+        const UINT32 unit_start = separator_index + 1;
+        const DWRITE_TEXT_RANGE value_range{0, unit_start};
+        const DWRITE_TEXT_RANGE unit_range{unit_start, static_cast<UINT32>(written) - unit_start};
+        result = layout->SetFontSize(default_unit_font_size, unit_range);
+        if (FAILED(result)) return result;
+        result = layout->SetFontWeight(DWRITE_FONT_WEIGHT_SEMI_BOLD, unit_range);
+        if (FAILED(result)) return result;
+
+        DWRITE_TEXT_METRICS metrics{};
+        result = layout->GetMetrics(&metrics);
+        if (FAILED(result)) return result;
+        const float usable_width = std::max(1.0f, width - 4.0f);
+        const float usable_height = std::max(1.0f, height - 2.0f);
+        const float width_scale = metrics.widthIncludingTrailingWhitespace > usable_width ? usable_width / metrics.widthIncludingTrailingWhitespace : 1.0f;
+        const float height_scale = metrics.height > usable_height ? usable_height / metrics.height : 1.0f;
+        const float scale = std::min(width_scale, height_scale);
+        if (scale < 1.0f) {
+            constexpr float fit_safety_factor = 0.9f;
+            result = layout->SetFontSize(std::max(minimum_value_font_size, default_value_font_size * scale * fit_safety_factor), value_range);
             if (FAILED(result)) return result;
-            result = layout->SetFontWeight(DWRITE_FONT_WEIGHT_SEMI_BOLD, unit_range);
+            result = layout->SetFontSize(std::max(minimum_unit_font_size, default_unit_font_size * scale * fit_safety_factor), unit_range);
             if (FAILED(result)) return result;
         }
 

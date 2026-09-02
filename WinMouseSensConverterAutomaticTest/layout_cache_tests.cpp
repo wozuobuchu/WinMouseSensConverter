@@ -198,12 +198,38 @@ namespace automatic_test {
             const wchar_t* separator = std::wcschr(cache.display_text.data(), L' ');
             TEST_EXPECT(runner, separator != nullptr);
             const UINT32 unit_start = static_cast<UINT32>(separator - cache.display_text.data()) + 1;
+            float value_size = 0.0f;
             float unit_size = 0.0f;
             DWRITE_FONT_WEIGHT unit_weight = DWRITE_FONT_WEIGHT_NORMAL;
+            TEST_EXPECT(runner, SUCCEEDED(cache.layout->GetFontSize(0, &value_size)));
             TEST_EXPECT(runner, SUCCEEDED(cache.layout->GetFontSize(unit_start, &unit_size)));
             TEST_EXPECT(runner, SUCCEEDED(cache.layout->GetFontWeight(unit_start, &unit_weight)));
+            TEST_EXPECT_NEAR(runner, value_size, 48.0f, 0.001f);
             TEST_EXPECT_NEAR(runner, unit_size, 18.0f, 0.001f);
             TEST_EXPECT(runner, unit_weight == DWRITE_FONT_WEIGHT_SEMI_BOLD);
+        });
+
+        runner.run("calibration layout shrinks to fit constrained height", [&] {
+            DWriteFixture fixture;
+            ui::detail::SharedDataSnapshot shared_data{};
+            shared_data.accumulated_dx = 3196.062992125984;
+            TEST_EXPECT(runner, SUCCEEDED(ui::detail::update_calibration_dpi_layout(fixture.state, shared_data, 400.0f, 30.0f)));
+
+            const auto& cache = fixture.state.calibration_dpi_layout;
+            const wchar_t* separator = std::wcschr(cache.display_text.data(), L' ');
+            TEST_EXPECT(runner, separator != nullptr);
+            const UINT32 unit_start = static_cast<UINT32>(separator - cache.display_text.data()) + 1;
+            float value_size = 0.0f;
+            float unit_size = 0.0f;
+            DWRITE_TEXT_METRICS metrics{};
+            TEST_EXPECT(runner, SUCCEEDED(cache.layout->GetFontSize(0, &value_size)));
+            TEST_EXPECT(runner, SUCCEEDED(cache.layout->GetFontSize(unit_start, &unit_size)));
+            TEST_EXPECT(runner, SUCCEEDED(cache.layout->GetMetrics(&metrics)));
+            TEST_EXPECT(runner, value_size >= 20.0f);
+            TEST_EXPECT(runner, value_size < 48.0f);
+            TEST_EXPECT(runner, unit_size >= 9.0f);
+            TEST_EXPECT(runner, unit_size < 18.0f);
+            TEST_EXPECT(runner, metrics.height <= 28.0f);
         });
     }
 
