@@ -76,18 +76,23 @@ namespace ui::detail {
         return swprintf_s(text, capacity, L"%.3e", value);
     }
 
-    int format_measurement_metadata(int reference_dpi, Unit unit, wchar_t* text, size_t capacity) noexcept {
+    int format_reference_dpi_cell(int reference_dpi, wchar_t* text, size_t capacity) noexcept {
         if (text == nullptr || capacity == 0) return -1;
-        return swprintf_s(text, capacity, L"REFDPI %d | UNIT %ls", reference_dpi, unit_name(unit));
+        return swprintf_s(text, capacity, L"REFDPI %d", reference_dpi);
     }
 
-    int format_calibration_metadata(int calibration_distance_cm, int reference_dpi, Unit unit, wchar_t* text, size_t capacity) noexcept {
+    int format_calibration_distance_cell(int calibration_distance_cm, int reference_dpi, Unit unit, wchar_t* text, size_t capacity) noexcept {
         if (text == nullptr || capacity == 0) return -1;
         const double target_inches = static_cast<double>(calibration_distance_cm) / 2.54;
         const double target_reference_counts = target_inches * static_cast<double>(reference_dpi);
         wchar_t distance[128]{};
         if (format_distance_value(target_reference_counts, reference_dpi, unit, distance, std::size(distance)) <= 0) return -1;
-        return swprintf_s(text, capacity, L"CALDIS %ls | UNIT %ls", distance, unit_name(unit));
+        return swprintf_s(text, capacity, L"CALDIS %ls", distance);
+    }
+
+    int format_unit_cell(Unit unit, wchar_t* text, size_t capacity) noexcept {
+        if (text == nullptr || capacity == 0) return -1;
+        return swprintf_s(text, capacity, L"UNIT %ls", unit_name(unit));
     }
 
     void draw_text(UiState& state, const wchar_t* text, IDWriteTextFormat* format, const D2D1_RECT_F& bounds, ID2D1Brush* brush, D2D1_DRAW_TEXT_OPTIONS options) noexcept {
@@ -102,7 +107,7 @@ namespace ui::detail {
         state.render_target->DrawRoundedRectangle(card, state.border_brush.Get(), 1.0f);
     }
 
-    PageLayout calculate_page_layout(float width, float height, float shortcut_badge_width) noexcept {
+    PageLayout calculate_page_layout(float width, float height, float shortcut_badge_width, const std::array<float, 2>& header_cell_text_widths) noexcept {
         PageLayout layout{};
         if (width <= 1.0f || height <= 1.0f) return layout;
 
@@ -126,7 +131,27 @@ namespace ui::detail {
         layout.header_bounds = D2D1::RectF(left, top, right, top + header_height);
         const float mode_width = 126.0f * layout.scale;
         layout.mode_pill_bounds = D2D1::RectF(left, top + 2.0f * layout.scale, left + mode_width, top + header_height - 2.0f * layout.scale);
-        layout.metadata_bounds = D2D1::RectF(layout.mode_pill_bounds.right + 12.0f * layout.scale, top, right, top + header_height);
+        const float header_gap = 12.0f * layout.scale;
+        const float header_cell_padding = 12.0f * layout.scale;
+        const float available_header_width = std::max(1.0f, right - layout.mode_pill_bounds.right - header_gap);
+        const std::array<float, 2> natural_cell_widths{
+            std::max(1.0f, header_cell_text_widths[0]) + header_cell_padding * 2.0f,
+            std::max(1.0f, header_cell_text_widths[1]) + header_cell_padding * 2.0f,
+        };
+        const float natural_group_width = natural_cell_widths[0] + natural_cell_widths[1];
+        layout.header_cell_text_scale = std::min(1.0f, available_header_width / natural_group_width);
+        const float first_cell_width = natural_cell_widths[0] * layout.header_cell_text_scale;
+        const float second_cell_width = natural_cell_widths[1] * layout.header_cell_text_scale;
+        layout.header_cell_bounds[1] = D2D1::RectF(
+            right - second_cell_width,
+            layout.mode_pill_bounds.top,
+            right,
+            layout.mode_pill_bounds.bottom);
+        layout.header_cell_bounds[0] = D2D1::RectF(
+            layout.header_cell_bounds[1].left - first_cell_width,
+            layout.mode_pill_bounds.top,
+            layout.header_cell_bounds[1].left,
+            layout.mode_pill_bounds.bottom);
         layout.data_bounds = D2D1::RectF(left, layout.header_bounds.bottom + section_gap, right, layout.header_bounds.bottom + section_gap + data_height);
         layout.footer_bounds = D2D1::RectF(left, layout.data_bounds.bottom + section_gap, right, layout.data_bounds.bottom + section_gap + footer_height);
 
@@ -153,15 +178,88 @@ namespace ui::detail {
         };
     }
 
-    bool begin_page(UiState& state, const SharedDataSnapshot& shared_data, const wchar_t* mode_name, const wchar_t* metadata, PageLayout& layout) noexcept {
+    HRESULT update_header_cell_layout(UiState& state, HeaderCellLayoutCache& cache, const wchar_t* text, float font_size) noexcept {
+        if (text == nullptr || font_size <= 0.0f) return E_INVALIDARG;
+        const UINT32 text_length = static_cast<UINT32>(std::wcslen(text));
+        if (text_length >= cache.display_text.size()) return E_INVALIDARG;
+
+        const bool text_changed = cache.layout == nullptr
+            || cache.display_text_length != text_length
+            || std::wmemcmp(cache.display_text.data(), text, text_length) != 0;
+        if (text_changed) {
+            constexpr float base_font_size = 14.0f;
+            ComPtr<IDWriteTextLayout> text_layout;
+            HRESULT result = state.write_factory->CreateTextLayout(
+                text,
+                text_length,
+                state.header_cell_format.Get(),
+                4096.0f,
+                64.0f,
+                text_layout.GetAddressOf());
+            if (FAILED(result)) return result;
+            result = text_layout->SetFontSize(base_font_size, DWRITE_TEXT_RANGE{0, text_length});
+            if (FAILED(result)) return result;
+
+            DWRITE_TEXT_METRICS metrics{};
+            result = text_layout->GetMetrics(&metrics);
+            if (FAILED(result)) return result;
+
+            cache.layout = std::move(text_layout);
+            std::copy_n(text, text_length + 1, cache.display_text.begin());
+            cache.display_text_length = text_length;
+            cache.font_size = base_font_size;
+            cache.intrinsic_width = metrics.widthIncludingTrailingWhitespace;
+        }
+
+        if (cache.font_size == font_size) return S_OK;
+        const HRESULT result = cache.layout->SetFontSize(font_size, DWRITE_TEXT_RANGE{0, cache.display_text_length});
+        if (SUCCEEDED(result)) cache.font_size = font_size;
+        return result;
+    }
+
+    bool begin_page(UiState& state, const SharedDataSnapshot& shared_data, const wchar_t* mode_name, const std::array<const wchar_t*, 2>& header_cells, PageLayout& layout) noexcept {
         ID2D1HwndRenderTarget* target = state.render_target.Get();
         const D2D1_SIZE_F size = target->GetSize();
-        layout = calculate_page_layout(size.width, size.height, state.shortcut_badge_width);
+        constexpr float header_font_size = 14.0f;
+        std::array<float, 2> header_cell_text_widths{};
+        for (size_t index = 0; index < header_cells.size(); ++index) {
+            HeaderCellLayoutCache& cache = state.header_cell_layouts[index];
+            const float retained_font_size = cache.layout != nullptr ? cache.font_size : header_font_size;
+            if (FAILED(update_header_cell_layout(state, cache, header_cells[index], retained_font_size))) return false;
+            header_cell_text_widths[index] = cache.intrinsic_width;
+        }
+
+        layout = calculate_page_layout(size.width, size.height, state.shortcut_badge_width, header_cell_text_widths);
         if (layout.content_width <= 1.0f || layout.data_bounds.bottom <= layout.data_bounds.top) return false;
 
         target->FillRoundedRectangle(D2D1::RoundedRect(layout.mode_pill_bounds, (layout.mode_pill_bounds.bottom - layout.mode_pill_bounds.top) * 0.5f, (layout.mode_pill_bounds.bottom - layout.mode_pill_bounds.top) * 0.5f), state.mode_fill_brush.Get());
         draw_text(state, mode_name, state.mode_format.Get(), layout.mode_pill_bounds, state.accent_brush.Get());
-        draw_text(state, metadata, state.metadata_format.Get(), layout.metadata_bounds, state.secondary_text_brush.Get());
+
+        const D2D1_RECT_F header_cell_group_bounds = D2D1::RectF(
+            layout.header_cell_bounds[0].left,
+            layout.header_cell_bounds[0].top,
+            layout.header_cell_bounds[1].right,
+            layout.header_cell_bounds[1].bottom);
+        const float header_cell_radius = 8.0f * layout.scale;
+        const D2D1_ROUNDED_RECT header_cell_group = D2D1::RoundedRect(header_cell_group_bounds, header_cell_radius, header_cell_radius);
+        target->FillRoundedRectangle(header_cell_group, state.surface_brush.Get());
+        target->DrawRoundedRectangle(header_cell_group, state.border_brush.Get(), 1.0f);
+        const float divider_x = layout.header_cell_bounds[0].right;
+        target->DrawLine(
+            D2D1::Point2F(divider_x, header_cell_group_bounds.top + 1.0f),
+            D2D1::Point2F(divider_x, header_cell_group_bounds.bottom - 1.0f),
+            state.border_brush.Get(),
+            1.0f);
+
+        const float fitted_header_font_size = header_font_size * layout.header_cell_text_scale;
+        for (size_t index = 0; index < header_cells.size(); ++index) {
+            HeaderCellLayoutCache& cache = state.header_cell_layouts[index];
+            if (FAILED(update_header_cell_layout(state, cache, header_cells[index], fitted_header_font_size))) return false;
+            const D2D1_RECT_F& bounds = layout.header_cell_bounds[index];
+            if (FAILED(cache.layout->SetMaxWidth(bounds.right - bounds.left))) return false;
+            if (FAILED(cache.layout->SetMaxHeight(bounds.bottom - bounds.top))) return false;
+            target->DrawTextLayout(D2D1::Point2F(bounds.left, bounds.top), cache.layout.Get(), state.secondary_text_brush.Get(), D2D1_DRAW_TEXT_OPTIONS_CLIP);
+        }
 
         draw_card(state, layout.footer_bounds, layout.card_radius);
         target->FillRoundedRectangle(D2D1::RoundedRect(layout.shortcut_badge_bounds, 9.0f * layout.scale, 9.0f * layout.scale), state.accent_brush.Get());

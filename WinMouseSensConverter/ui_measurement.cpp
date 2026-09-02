@@ -8,11 +8,14 @@
 namespace ui::modes::measurement {
 
     void draw(detail::UiState& state, const detail::SharedDataSnapshot& shared_data) noexcept {
-        wchar_t metadata[64]{};
-        if (detail::format_measurement_metadata(state.reference_dpi, state.unit, metadata, std::size(metadata)) <= 0) return;
+        wchar_t reference_dpi_cell[64]{};
+        wchar_t unit_cell[64]{};
+        if (detail::format_reference_dpi_cell(state.reference_dpi, reference_dpi_cell, std::size(reference_dpi_cell)) <= 0) return;
+        if (detail::format_unit_cell(state.unit, unit_cell, std::size(unit_cell)) <= 0) return;
+        const std::array<const wchar_t*, 2> header_cells{reference_dpi_cell, unit_cell};
 
         detail::PageLayout page{};
-        if (!detail::begin_page(state, shared_data, L"Measurement", metadata, page)) return;
+        if (!detail::begin_page(state, shared_data, L"Measurement", header_cells, page)) return;
 
         const std::array<D2D1_RECT_F, 2> axis_cards = detail::calculate_measurement_card_bounds(page);
         constexpr std::array<const wchar_t*, 2> axis_labels{L"X \x00B7 HORIZONTAL", L"Y \x00B7 VERTICAL"};

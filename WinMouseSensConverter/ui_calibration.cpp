@@ -1,5 +1,6 @@
 #include "ui_internal.hpp"
 
+#include <array>
 #include <cmath>
 #include <cwchar>
 #include <iterator>
@@ -30,11 +31,14 @@ namespace ui::detail {
 namespace ui::modes::calibration {
 
     void draw(detail::UiState& state, const detail::SharedDataSnapshot& shared_data) noexcept {
-        wchar_t metadata[192]{};
-        if (detail::format_calibration_metadata(state.calibration_distance_cm, state.reference_dpi, state.unit, metadata, std::size(metadata)) <= 0) return;
+        wchar_t calibration_distance_cell[192]{};
+        wchar_t unit_cell[64]{};
+        if (detail::format_calibration_distance_cell(state.calibration_distance_cm, state.reference_dpi, state.unit, calibration_distance_cell, std::size(calibration_distance_cell)) <= 0) return;
+        if (detail::format_unit_cell(state.unit, unit_cell, std::size(unit_cell)) <= 0) return;
+        const std::array<const wchar_t*, 2> header_cells{calibration_distance_cell, unit_cell};
 
         detail::PageLayout page{};
-        if (!detail::begin_page(state, shared_data, L"Calibration", metadata, page)) return;
+        if (!detail::begin_page(state, shared_data, L"Calibration", header_cells, page)) return;
         detail::draw_card(state, page.data_bounds, page.card_radius);
 
         const float label_height = 38.0f * page.scale;

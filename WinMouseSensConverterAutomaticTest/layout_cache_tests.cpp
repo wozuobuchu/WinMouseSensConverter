@@ -39,7 +39,7 @@ namespace automatic_test {
                 if (FAILED(state.value_format->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER))) throw std::runtime_error("SetTextAlignment failed");
                 if (FAILED(state.value_format->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER))) throw std::runtime_error("SetParagraphAlignment failed");
                 if (FAILED(state.value_format->SetWordWrapping(DWRITE_WORD_WRAPPING_NO_WRAP))) throw std::runtime_error("SetWordWrapping failed");
-                const HRESULT metadata_result = state.write_factory->CreateTextFormat(
+                const HRESULT header_cell_result = state.write_factory->CreateTextFormat(
                     L"Segoe UI",
                     nullptr,
                     DWRITE_FONT_WEIGHT_SEMI_BOLD,
@@ -47,9 +47,11 @@ namespace automatic_test {
                     DWRITE_FONT_STRETCH_NORMAL,
                     14.0f,
                     L"en-us",
-                    state.metadata_format.GetAddressOf());
-                if (FAILED(metadata_result)) throw std::runtime_error("metadata CreateTextFormat failed");
-                if (FAILED(state.metadata_format->SetWordWrapping(DWRITE_WORD_WRAPPING_NO_WRAP))) throw std::runtime_error("metadata SetWordWrapping failed");
+                    state.header_cell_format.GetAddressOf());
+                if (FAILED(header_cell_result)) throw std::runtime_error("header cell CreateTextFormat failed");
+                if (FAILED(state.header_cell_format->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER))) throw std::runtime_error("header cell SetTextAlignment failed");
+                if (FAILED(state.header_cell_format->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER))) throw std::runtime_error("header cell SetParagraphAlignment failed");
+                if (FAILED(state.header_cell_format->SetWordWrapping(DWRITE_WORD_WRAPPING_NO_WRAP))) throw std::runtime_error("header cell SetWordWrapping failed");
             }
 
             ui::detail::UiState state;
@@ -81,26 +83,54 @@ namespace automatic_test {
             TEST_EXPECT(runner, std::wcsstr(text, L"raw") == nullptr);
         });
 
-        runner.run("compact metadata fits beside the mode pill at minimum size", [&] {
+        runner.run("header configuration values are split into two cells", [&] {
             DWriteFixture fixture;
-            wchar_t measurement[128]{};
-            wchar_t calibration[192]{};
-            TEST_EXPECT(runner, ui::detail::format_measurement_metadata(999999, config::OutputUnit::inch, measurement, std::size(measurement)) > 0);
-            TEST_EXPECT(runner, std::wstring_view(measurement) == L"REFDPI 999999 | UNIT inch");
-            TEST_EXPECT(runner, ui::detail::format_calibration_metadata(1000, 999999, config::OutputUnit::raw, calibration, std::size(calibration)) > 0);
-            TEST_EXPECT(runner, std::wcsstr(calibration, L"CALDIS ") == calibration);
-            TEST_EXPECT(runner, std::wcsstr(calibration, L" | UNIT raw") != nullptr);
-            TEST_EXPECT(runner, std::wcsstr(calibration, L"MEASURED") == nullptr);
+            wchar_t reference_dpi[64]{};
+            wchar_t calibration_distance[192]{};
+            wchar_t unit[64]{};
+            TEST_EXPECT(runner, ui::detail::format_reference_dpi_cell(999999, reference_dpi, std::size(reference_dpi)) > 0);
+            TEST_EXPECT(runner, std::wstring_view(reference_dpi) == L"REFDPI 999999");
+            TEST_EXPECT(runner, ui::detail::format_calibration_distance_cell(1000, 999999, config::OutputUnit::raw, calibration_distance, std::size(calibration_distance)) > 0);
+            TEST_EXPECT(runner, std::wstring_view(calibration_distance) == L"CALDIS 393700393.701");
+            TEST_EXPECT(runner, std::wcschr(reference_dpi, L'|') == nullptr);
+            TEST_EXPECT(runner, std::wcschr(calibration_distance, L'|') == nullptr);
 
-            const ui::detail::PageLayout page = ui::detail::calculate_page_layout(640.0f, 360.0f, 48.0f);
-            const float available_width = page.metadata_bounds.right - page.metadata_bounds.left;
-            for (const wchar_t* text : {measurement, calibration}) {
-                Microsoft::WRL::ComPtr<IDWriteTextLayout> layout;
-                TEST_EXPECT(runner, SUCCEEDED(fixture.state.write_factory->CreateTextLayout(text, static_cast<UINT32>(std::wcslen(text)), fixture.state.metadata_format.Get(), 1000.0f, 32.0f, layout.GetAddressOf())));
-                DWRITE_TEXT_METRICS metrics{};
-                TEST_EXPECT(runner, SUCCEEDED(layout->GetMetrics(&metrics)));
-                TEST_EXPECT(runner, metrics.widthIncludingTrailingWhitespace <= available_width);
+            constexpr std::array units{
+                config::OutputUnit::raw,
+                config::OutputUnit::inch,
+                config::OutputUnit::mm,
+                config::OutputUnit::cm,
+                config::OutputUnit::dm,
+                config::OutputUnit::m,
+            };
+            for (const config::OutputUnit output_unit : units) {
+                TEST_EXPECT(runner, ui::detail::format_unit_cell(output_unit, unit, std::size(unit)) > 0);
+                TEST_EXPECT(runner, std::wstring_view(unit).starts_with(L"UNIT "));
+                TEST_EXPECT(runner, std::wcschr(unit, L'|') == nullptr);
             }
+        });
+
+        runner.run("header cell layouts cache measured text widths", [&] {
+            DWriteFixture fixture;
+            ui::detail::HeaderCellLayoutCache first_cell;
+            ui::detail::HeaderCellLayoutCache second_cell;
+            TEST_EXPECT(runner, SUCCEEDED(ui::detail::update_header_cell_layout(fixture.state, first_cell, L"CALDIS 393700393.701", 14.0f)));
+            TEST_EXPECT(runner, SUCCEEDED(ui::detail::update_header_cell_layout(fixture.state, second_cell, L"UNIT raw", 14.0f)));
+            IDWriteTextLayout* first_layout = first_cell.layout.Get();
+            TEST_EXPECT(runner, first_layout != nullptr);
+            TEST_EXPECT(runner, first_cell.intrinsic_width > 0.0f);
+            TEST_EXPECT(runner, second_cell.intrinsic_width > 0.0f);
+            TEST_EXPECT(runner, SUCCEEDED(ui::detail::update_header_cell_layout(fixture.state, first_cell, L"CALDIS 393700393.701", 14.0f)));
+            TEST_EXPECT(runner, first_cell.layout.Get() == first_layout);
+            TEST_EXPECT(runner, SUCCEEDED(ui::detail::update_header_cell_layout(fixture.state, first_cell, L"CALDIS 393700393.701", 12.0f)));
+            TEST_EXPECT(runner, first_cell.layout.Get() == first_layout);
+            TEST_EXPECT_NEAR(runner, first_cell.font_size, 12.0f, 0.001f);
+
+            const std::array<float, 2> measured_widths{first_cell.intrinsic_width, second_cell.intrinsic_width};
+            const ui::detail::PageLayout page = ui::detail::calculate_page_layout(640.0f, 360.0f, 48.0f, measured_widths);
+            TEST_EXPECT(runner, page.header_cell_text_scale > 0.0f);
+            TEST_EXPECT(runner, page.mode_pill_bounds.right < page.header_cell_bounds[0].left);
+            TEST_EXPECT_NEAR(runner, page.header_cell_bounds[0].right, page.header_cell_bounds[1].left, 0.001f);
         });
 
         runner.run("shared page layout remains separated at supported sizes", [&] {
@@ -110,8 +140,9 @@ namespace automatic_test {
                 D2D1_SIZE_F{1280.0f, 720.0f},
                 D2D1_SIZE_F{1920.0f, 1080.0f},
             };
+            constexpr std::array<float, 2> header_text_widths{160.0f, 72.0f};
             for (const D2D1_SIZE_F size : sizes) {
-                const ui::detail::PageLayout page = ui::detail::calculate_page_layout(size.width, size.height, 160.0f);
+                const ui::detail::PageLayout page = ui::detail::calculate_page_layout(size.width, size.height, 160.0f, header_text_widths);
                 const D2D1_RECT_F client = D2D1::RectF(0.0f, 0.0f, size.width, size.height);
                 TEST_EXPECT(runner, page.scale >= 0.80f && page.scale <= 1.0f);
                 TEST_EXPECT(runner, has_positive_area(page.header_bounds));
@@ -122,18 +153,35 @@ namespace automatic_test {
                 TEST_EXPECT(runner, is_inside(page.footer_bounds, client));
                 TEST_EXPECT(runner, page.header_bounds.bottom <= page.data_bounds.top);
                 TEST_EXPECT(runner, page.data_bounds.bottom <= page.footer_bounds.top);
-                TEST_EXPECT(runner, page.mode_pill_bounds.right <= page.metadata_bounds.left);
+                TEST_EXPECT(runner, has_positive_area(page.header_cell_bounds[0]));
+                TEST_EXPECT(runner, has_positive_area(page.header_cell_bounds[1]));
+                TEST_EXPECT(runner, is_inside(page.header_cell_bounds[0], page.header_bounds));
+                TEST_EXPECT(runner, is_inside(page.header_cell_bounds[1], page.header_bounds));
+                TEST_EXPECT_NEAR(runner, page.header_cell_bounds[0].right, page.header_cell_bounds[1].left, 0.001f);
+                TEST_EXPECT_NEAR(runner, page.header_cell_bounds[1].right, page.header_bounds.right, 0.001f);
+                TEST_EXPECT_NEAR(runner, page.header_cell_bounds[0].top, page.mode_pill_bounds.top, 0.001f);
+                TEST_EXPECT_NEAR(runner, page.header_cell_bounds[1].bottom, page.mode_pill_bounds.bottom, 0.001f);
+                TEST_EXPECT(runner, page.mode_pill_bounds.right + 12.0f * page.scale <= page.header_cell_bounds[0].left + 0.001f);
                 TEST_EXPECT(runner, page.shortcut_badge_bounds.right <= page.shortcut_text_bounds.left);
                 TEST_EXPECT(runner, page.shortcut_text_bounds.right <= page.switch_track_bounds.left);
                 TEST_EXPECT(runner, is_inside(page.shortcut_badge_bounds, page.footer_bounds));
                 TEST_EXPECT(runner, is_inside(page.switch_track_bounds, page.footer_bounds));
             }
-            TEST_EXPECT_NEAR(runner, ui::detail::calculate_page_layout(640.0f, 360.0f, 48.0f).scale, 0.80f, 0.001f);
-            TEST_EXPECT_NEAR(runner, ui::detail::calculate_page_layout(800.0f, 450.0f, 48.0f).scale, 1.00f, 0.001f);
+            TEST_EXPECT_NEAR(runner, ui::detail::calculate_page_layout(640.0f, 360.0f, 48.0f, header_text_widths).scale, 0.80f, 0.001f);
+            TEST_EXPECT_NEAR(runner, ui::detail::calculate_page_layout(800.0f, 450.0f, 48.0f, header_text_widths).scale, 1.00f, 0.001f);
+        });
+
+        runner.run("header cells scale together when width is constrained", [&] {
+            constexpr std::array<float, 2> wide_header_texts{600.0f, 300.0f};
+            const ui::detail::PageLayout page = ui::detail::calculate_page_layout(640.0f, 360.0f, 48.0f, wide_header_texts);
+            TEST_EXPECT(runner, page.header_cell_text_scale > 0.0f && page.header_cell_text_scale < 1.0f);
+            TEST_EXPECT_NEAR(runner, page.header_cell_bounds[0].right, page.header_cell_bounds[1].left, 0.001f);
+            TEST_EXPECT_NEAR(runner, page.header_cell_bounds[1].right, page.header_bounds.right, 0.001f);
+            TEST_EXPECT_NEAR(runner, page.header_cell_bounds[0].left, page.mode_pill_bounds.right + 12.0f * page.scale, 0.001f);
         });
 
         runner.run("measurement cards exactly occupy calibration data region", [&] {
-            const ui::detail::PageLayout page = ui::detail::calculate_page_layout(640.0f, 360.0f, 48.0f);
+            const ui::detail::PageLayout page = ui::detail::calculate_page_layout(640.0f, 360.0f, 48.0f, std::array<float, 2>{80.0f, 60.0f});
             const auto cards = ui::detail::calculate_measurement_card_bounds(page);
             TEST_EXPECT(runner, cards[0].left == page.data_bounds.left);
             TEST_EXPECT(runner, cards[1].right == page.data_bounds.right);

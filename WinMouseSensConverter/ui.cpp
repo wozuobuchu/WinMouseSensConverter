@@ -198,7 +198,7 @@ namespace {
         if (FAILED(result)) return result;
         result = create_text_format(state.write_factory.Get(), 14.0f, DWRITE_FONT_WEIGHT_SEMI_BOLD, DWRITE_TEXT_ALIGNMENT_CENTER, DWRITE_PARAGRAPH_ALIGNMENT_CENTER, state.label_format.GetAddressOf());
         if (FAILED(result)) return result;
-        result = create_text_format(state.write_factory.Get(), 14.0f, DWRITE_FONT_WEIGHT_SEMI_BOLD, DWRITE_TEXT_ALIGNMENT_TRAILING, DWRITE_PARAGRAPH_ALIGNMENT_CENTER, state.metadata_format.GetAddressOf());
+        result = create_text_format(state.write_factory.Get(), 14.0f, DWRITE_FONT_WEIGHT_SEMI_BOLD, DWRITE_TEXT_ALIGNMENT_CENTER, DWRITE_PARAGRAPH_ALIGNMENT_CENTER, state.header_cell_format.GetAddressOf());
         if (FAILED(result)) return result;
         result = create_text_format(state.write_factory.Get(), 14.0f, DWRITE_FONT_WEIGHT_SEMI_BOLD, DWRITE_TEXT_ALIGNMENT_CENTER, DWRITE_PARAGRAPH_ALIGNMENT_CENTER, state.mode_format.GetAddressOf());
         if (FAILED(result)) return result;
