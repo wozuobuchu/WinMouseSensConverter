@@ -81,7 +81,7 @@ calibrated DPI = counts / known distance in inches
 
 This is the magnitude of the final accumulated X/Y displacement, not the sum of every packet's path length. Opposite movement on an axis cancels before the magnitude is calculated, so a curved path, reversal, or endpoint correction does not represent the ruler distance reliably.
 
-The **Measured Distance** field converts `counts` through the selected ReferenceDPI for comparison; ReferenceDPI and Unit do not enter the calibrated-DPI formula. When Unit is `raw`, Measured Distance is the captured vector magnitude and Calibration Distance is the number of counts that the current ReferenceDPI would predict for the ruler distance. The calculated result is display-only: it never overwrites ReferenceDPI. If you want to use it for later physical-distance conversion, manually choose the nearest suitable integer through **Options → ReferenceDPI → Custom...**.
+The Calibration header shows `CALBDIST` in the selected Unit. With a physical unit it is the configured ruler distance converted for display; with `raw` it is the number of counts that the current ReferenceDPI would predict for that ruler distance. The captured movement distance is not displayed separately. ReferenceDPI and Unit do not enter the calibrated-DPI formula, and the calculated result never overwrites ReferenceDPI. To use the result for later physical-distance conversion, manually choose the nearest suitable integer through **Options → ReferenceDPI → Custom...**.
 
 ### Configuration
 
@@ -385,7 +385,7 @@ The most common causes are short ruler distances, inconsistent endpoint alignmen
 
 #### Why does changing ReferenceDPI not change calibrated DPI?
 
-Calibration divides the captured raw vector magnitude directly by the known ruler distance in inches. ReferenceDPI only converts the on-screen Measured Distance and the raw-equivalent target; it is deliberately excluded from the calibrated-DPI formula.
+Calibration divides the captured raw vector magnitude directly by the known ruler distance in inches. ReferenceDPI only affects the raw-equivalent `CALBDIST` display (and Measurement-mode conversion); it is deliberately excluded from the calibrated-DPI formula.
 
 #### The result is negative
 
@@ -478,7 +478,7 @@ counts = sqrt(dx² + dy²)
 
 这里计算的是最终累计 X/Y 的向量长度，而不是每个数据包路径长度之和。同一轴上的反向移动会先相互抵消，因此弯曲轨迹、反向移动或端点回调不能可靠代表尺子上的已知距离。
 
-界面中的 **Measured Distance** 使用当前 ReferenceDPI 换算 `counts`，只用于比较；ReferenceDPI 和 Unit 都不参与定标 DPI 公式。Unit 为 `raw` 时，Measured Distance 显示采集到的向量 counts，Calibration Distance 显示当前 ReferenceDPI 对该尺子距离预测的等效 counts。定标结果只显示，不会自动覆盖 ReferenceDPI；如需将结果用于后续物理距离换算，请通过 **Options → ReferenceDPI → Custom...** 手工输入合适的整数。
+Calibration 顶部的 `CALBDIST` 使用当前 Unit 显示目标定标距离：物理单位下显示尺子距离的对应换算值，`raw` 下显示当前 ReferenceDPI 对该尺子距离预测的等效 counts。界面不再单独显示采集到的实测距离。ReferenceDPI 和 Unit 都不参与定标 DPI 公式，定标结果也不会自动覆盖 ReferenceDPI；如需将结果用于后续物理距离换算，请通过 **Options → ReferenceDPI → Custom...** 手工输入合适的整数。
 
 ### 配置文件
 
@@ -765,7 +765,7 @@ Reference DPI 是数学换算值。标称 `800 DPI` 的鼠标可能存在可测�
 
 #### 为什么修改 ReferenceDPI 不会改变定标 DPI？
 
-定标公式直接用原始向量 counts 除以尺子的已知英寸距离。ReferenceDPI 只用于换算界面上的 Measured Distance 和 raw 等效目标，刻意不参与定标 DPI 计算。
+定标公式直接用原始向量 counts 除以尺子的已知英寸距离。ReferenceDPI 只影响 `CALBDIST` 的 raw 等效 counts 显示（以及 Measurement 模式的距离换算），刻意不参与定标 DPI 计算。
 
 #### 结果为什么是负数？
 

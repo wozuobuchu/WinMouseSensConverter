@@ -194,22 +194,17 @@ namespace {
         );
         if (FAILED(result)) return result;
 
-        result = create_text_format(state.write_factory.Get(), 26.0f, DWRITE_FONT_WEIGHT_SEMI_BOLD, DWRITE_TEXT_ALIGNMENT_LEADING, DWRITE_PARAGRAPH_ALIGNMENT_CENTER, state.title_format.GetAddressOf());
+        result = create_text_format(state.write_factory.Get(), 56.0f, DWRITE_FONT_WEIGHT_SEMI_BOLD, DWRITE_TEXT_ALIGNMENT_CENTER, DWRITE_PARAGRAPH_ALIGNMENT_CENTER, state.value_format.GetAddressOf());
         if (FAILED(result)) return result;
-        result = create_text_format(state.write_factory.Get(), 14.0f, DWRITE_FONT_WEIGHT_SEMI_BOLD, DWRITE_TEXT_ALIGNMENT_CENTER, DWRITE_PARAGRAPH_ALIGNMENT_CENTER, state.status_format.GetAddressOf());
+        result = create_text_format(state.write_factory.Get(), 14.0f, DWRITE_FONT_WEIGHT_SEMI_BOLD, DWRITE_TEXT_ALIGNMENT_CENTER, DWRITE_PARAGRAPH_ALIGNMENT_CENTER, state.label_format.GetAddressOf());
         if (FAILED(result)) return result;
-        result = create_text_format(state.write_factory.Get(), 48.0f, DWRITE_FONT_WEIGHT_SEMI_BOLD, DWRITE_TEXT_ALIGNMENT_CENTER, DWRITE_PARAGRAPH_ALIGNMENT_CENTER, state.value_format.GetAddressOf());
+        result = create_text_format(state.write_factory.Get(), 14.0f, DWRITE_FONT_WEIGHT_SEMI_BOLD, DWRITE_TEXT_ALIGNMENT_TRAILING, DWRITE_PARAGRAPH_ALIGNMENT_CENTER, state.metadata_format.GetAddressOf());
         if (FAILED(result)) return result;
-        result = create_text_format(state.write_factory.Get(), 13.0f, DWRITE_FONT_WEIGHT_SEMI_BOLD, DWRITE_TEXT_ALIGNMENT_CENTER, DWRITE_PARAGRAPH_ALIGNMENT_CENTER, state.label_format.GetAddressOf());
+        result = create_text_format(state.write_factory.Get(), 14.0f, DWRITE_FONT_WEIGHT_SEMI_BOLD, DWRITE_TEXT_ALIGNMENT_CENTER, DWRITE_PARAGRAPH_ALIGNMENT_CENTER, state.mode_format.GetAddressOf());
         if (FAILED(result)) return result;
-        result = create_text_format(state.write_factory.Get(), 22.0f, DWRITE_FONT_WEIGHT_SEMI_BOLD, DWRITE_TEXT_ALIGNMENT_CENTER, DWRITE_PARAGRAPH_ALIGNMENT_CENTER, state.setting_format.GetAddressOf());
+        result = create_text_format(state.write_factory.Get(), 14.0f, DWRITE_FONT_WEIGHT_SEMI_BOLD, DWRITE_TEXT_ALIGNMENT_LEADING, DWRITE_PARAGRAPH_ALIGNMENT_CENTER, state.footer_format.GetAddressOf());
         if (FAILED(result)) return result;
-        result = create_text_format(state.write_factory.Get(), 17.0f, DWRITE_FONT_WEIGHT_SEMI_BOLD, DWRITE_TEXT_ALIGNMENT_LEADING, DWRITE_PARAGRAPH_ALIGNMENT_CENTER, state.shortcut_format.GetAddressOf());
-        if (FAILED(result)) return result;
-        result = create_text_format(state.write_factory.Get(), 14.0f, DWRITE_FONT_WEIGHT_NORMAL, DWRITE_TEXT_ALIGNMENT_LEADING, DWRITE_PARAGRAPH_ALIGNMENT_NEAR, state.body_format.GetAddressOf());
-        if (FAILED(result)) return result;
-
-        return state.body_format->SetWordWrapping(DWRITE_WORD_WRAPPING_WRAP);
+        return create_text_format(state.write_factory.Get(), 14.0f, DWRITE_FONT_WEIGHT_SEMI_BOLD, DWRITE_TEXT_ALIGNMENT_CENTER, DWRITE_PARAGRAPH_ALIGNMENT_CENTER, state.badge_format.GetAddressOf());
     }
 
     constexpr bool uses_extended_key_name(uint16_t virtual_key) noexcept {
@@ -257,9 +252,9 @@ namespace {
         const HRESULT layout_result = state.write_factory->CreateTextLayout(
             state.recording_key_name.data(),
             state.recording_key_name_length,
-            state.status_format.Get(),
+            state.badge_format.Get(),
             512.0f,
-            38.0f,
+            34.0f,
             layout.GetAddressOf()
         );
         if (FAILED(layout_result)) return;
@@ -271,8 +266,8 @@ namespace {
     }
 
     void discard_device_resources(UiState& state) noexcept {
-        state.status_text_brush.Reset();
-        state.status_fill_brush.Reset();
+        state.switch_track_brush.Reset();
+        state.mode_fill_brush.Reset();
         state.accent_brush.Reset();
         state.secondary_text_brush.Reset();
         state.primary_text_brush.Reset();
@@ -333,9 +328,9 @@ namespace {
         if (FAILED(result)) return result;
         result = create_brush(state.render_target.Get(), 0x2563EB, state.accent_brush.GetAddressOf());
         if (FAILED(result)) return result;
-        result = create_brush(state.render_target.Get(), 0xE9EDF2, state.status_fill_brush.GetAddressOf());
+        result = create_brush(state.render_target.Get(), 0xE8F0FE, state.mode_fill_brush.GetAddressOf());
         if (FAILED(result)) return result;
-        return create_brush(state.render_target.Get(), 0x687386, state.status_text_brush.GetAddressOf());
+        return create_brush(state.render_target.Get(), 0xC7CBD1, state.switch_track_brush.GetAddressOf());
     }
 
     HMENU create_main_menu() noexcept {

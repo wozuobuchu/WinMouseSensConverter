@@ -1,54 +1,62 @@
 #include "ui_internal.hpp"
 
-#include <algorithm>
 #include <array>
 #include <cwchar>
+#include <iterator>
+#include <limits>
 
 namespace ui::modes::measurement {
 
     void draw(detail::UiState& state, const detail::SharedDataSnapshot& shared_data) noexcept {
+        wchar_t metadata[64]{};
+        if (detail::format_measurement_metadata(state.reference_dpi, state.unit, metadata, std::size(metadata)) <= 0) return;
+
         detail::PageLayout page{};
-        if (!detail::begin_page(state, shared_data, L"Mouse Sensitivity Meter", page)) return;
+        if (!detail::begin_page(state, shared_data, L"Measurement", metadata, page)) return;
 
-        ID2D1HwndRenderTarget* target = state.render_target.Get();
-        const float settings_height = std::clamp(page.main_height * 0.30f, 58.0f, 82.0f);
-        const float settings_top = page.main_card.bottom - settings_height;
-        target->DrawLine(D2D1::Point2F(page.main_card.left + page.inner_padding, settings_top), D2D1::Point2F(page.main_card.right - page.inner_padding, settings_top), state.border_brush.Get(), 1.0f);
-
-        const float center_x = (page.main_card.left + page.main_card.right) * 0.5f;
-        const D2D1_RECT_F measurement_bounds = D2D1::RectF(page.main_card.left + page.inner_padding, page.status_bounds.bottom + 3.0f, page.main_card.right - page.inner_padding, settings_top - 2.0f);
-        const float divider_top = measurement_bounds.top + 8.0f;
-        const float divider_bottom = measurement_bounds.bottom - 8.0f;
-        if (divider_bottom > divider_top) target->DrawLine(D2D1::Point2F(center_x, divider_top), D2D1::Point2F(center_x, divider_bottom), state.border_brush.Get(), 1.0f);
-
-        constexpr float axis_gap = 14.0f;
-        const std::array<D2D1_RECT_F, 2> axis_bounds{
-            D2D1::RectF(measurement_bounds.left, measurement_bounds.top, center_x - axis_gap, measurement_bounds.bottom),
-            D2D1::RectF(center_x + axis_gap, measurement_bounds.top, measurement_bounds.right, measurement_bounds.bottom),
-        };
-        constexpr std::array<const wchar_t*, 2> axis_labels{L"X / HORIZONTAL", L"Y / VERTICAL"};
+        const std::array<D2D1_RECT_F, 2> axis_cards = detail::calculate_measurement_card_bounds(page);
+        constexpr std::array<const wchar_t*, 2> axis_labels{L"X \x00B7 HORIZONTAL", L"Y \x00B7 VERTICAL"};
         const std::array<double, 2> raw_counts{shared_data.accumulated_dx, shared_data.accumulated_dy};
-        const float label_top = measurement_bounds.top + 1.0f;
-        const float label_bottom = std::min(measurement_bounds.bottom, label_top + 18.0f);
-
-        for (size_t index = 0; index < axis_bounds.size(); ++index) {
-            detail::draw_text(state, axis_labels[index], state.label_format.Get(), D2D1::RectF(axis_bounds[index].left, label_top, axis_bounds[index].right, label_bottom), state.secondary_text_brush.Get());
-            const D2D1_RECT_F value_bounds = D2D1::RectF(axis_bounds[index].left, label_bottom, axis_bounds[index].right, axis_bounds[index].bottom);
-            if (SUCCEEDED(detail::update_value_layout(state, state.measurement_value_layouts[index], raw_counts[index], value_bounds.right - value_bounds.left, value_bounds.bottom - value_bounds.top))) {
-                target->DrawTextLayout(D2D1::Point2F(value_bounds.left, value_bounds.top), state.measurement_value_layouts[index].layout.Get(), state.primary_text_brush.Get(), D2D1_DRAW_TEXT_OPTIONS_CLIP);
-            }
+        std::array<std::array<wchar_t, 128>, 2> value_texts{};
+        for (size_t index = 0; index < value_texts.size(); ++index) {
+            if (detail::format_distance_value(raw_counts[index], state.reference_dpi, state.unit, value_texts[index].data(), value_texts[index].size()) <= 0) return;
         }
 
-        target->DrawLine(D2D1::Point2F(center_x, settings_top + 12.0f), D2D1::Point2F(center_x, page.main_card.bottom - 12.0f), state.border_brush.Get(), 1.0f);
-        const D2D1_RECT_F dpi_label_bounds = D2D1::RectF(page.main_card.left + page.inner_padding, settings_top + 7.0f, center_x - 12.0f, settings_top + 27.0f);
-        const D2D1_RECT_F unit_label_bounds = D2D1::RectF(center_x + 12.0f, settings_top + 7.0f, page.main_card.right - page.inner_padding, settings_top + 27.0f);
-        detail::draw_text(state, L"REFERENCE DPI", state.label_format.Get(), dpi_label_bounds, state.secondary_text_brush.Get());
-        detail::draw_text(state, L"OUTPUT UNIT", state.label_format.Get(), unit_label_bounds, state.secondary_text_brush.Get());
+        const float label_height = 34.0f * page.scale;
+        const float value_width = axis_cards[0].right - axis_cards[0].left - page.card_padding * 2.0f;
+        const float value_height = axis_cards[0].bottom - axis_cards[0].top - page.card_padding * 2.0f - label_height;
+        const wchar_t* group_texts[]{value_texts[0].data(), value_texts[1].data()};
+        float value_font_size = 56.0f * page.scale;
+        if (FAILED(detail::fitting_numeric_font_size(state, group_texts, std::size(group_texts), value_width, value_height, value_font_size, value_font_size))) return;
 
-        wchar_t dpi_text[16]{};
-        swprintf_s(dpi_text, L"%d", state.reference_dpi);
-        detail::draw_text(state, dpi_text, state.setting_format.Get(), D2D1::RectF(dpi_label_bounds.left, settings_top + 25.0f, dpi_label_bounds.right, page.main_card.bottom - 5.0f), state.primary_text_brush.Get());
-        detail::draw_text(state, detail::unit_name(state.unit), state.setting_format.Get(), D2D1::RectF(unit_label_bounds.left, settings_top + 25.0f, unit_label_bounds.right, page.main_card.bottom - 5.0f), state.primary_text_brush.Get());
+        for (size_t index = 0; index < axis_cards.size(); ++index) {
+            detail::draw_card(state, axis_cards[index], page.card_radius);
+            const D2D1_RECT_F label_bounds = D2D1::RectF(
+                axis_cards[index].left + page.card_padding,
+                axis_cards[index].top + page.card_padding,
+                axis_cards[index].right - page.card_padding,
+                axis_cards[index].top + page.card_padding + label_height);
+            detail::draw_text(state, axis_labels[index], state.label_format.Get(), label_bounds, state.secondary_text_brush.Get());
+            const D2D1_RECT_F value_bounds = D2D1::RectF(
+                axis_cards[index].left + page.card_padding,
+                label_bounds.bottom,
+                axis_cards[index].right - page.card_padding,
+                axis_cards[index].bottom - page.card_padding);
+            if (SUCCEEDED(detail::update_numeric_layout(
+                    state,
+                    state.measurement_value_layouts[index],
+                    value_texts[index].data(),
+                    std::numeric_limits<UINT32>::max(),
+                    value_bounds.right - value_bounds.left,
+                    value_bounds.bottom - value_bounds.top,
+                    value_font_size))) {
+                state.render_target->DrawTextLayout(
+                    D2D1::Point2F(value_bounds.left, value_bounds.top),
+                    state.measurement_value_layouts[index].layout.Get(),
+                    state.primary_text_brush.Get(),
+                    D2D1_DRAW_TEXT_OPTIONS_CLIP);
+            }
+        }
     }
 
 } // namespace ui::modes::measurement

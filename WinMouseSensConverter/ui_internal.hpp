@@ -15,26 +15,23 @@
 #include <wrl/client.h>
 
 #include <array>
+#include <cstddef>
+#include <limits>
 
 namespace ui::detail {
 
     using Microsoft::WRL::ComPtr;
     using Unit = config::OutputUnit;
 
-    struct ValueLayoutCache {
+    struct TextLayoutCache {
         ComPtr<IDWriteTextLayout> layout;
         std::array<wchar_t, 128> display_text{};
         UINT32 display_text_length = 0;
         float width = 0.0f;
         float height = 0.0f;
-    };
-
-    struct DpiResultLayoutCache {
-        ComPtr<IDWriteTextLayout> layout;
-        std::array<wchar_t, 64> display_text{};
-        UINT32 display_text_length = 0;
-        float width = 0.0f;
-        float height = 0.0f;
+        float primary_font_size = 0.0f;
+        float suffix_font_size = 0.0f;
+        UINT32 suffix_start = std::numeric_limits<UINT32>::max();
     };
 
     struct UiState {
@@ -63,13 +60,12 @@ namespace ui::detail {
         ComPtr<ID2D1Factory> d2d_factory;
         ComPtr<IDWriteFactory> write_factory;
 
-        ComPtr<IDWriteTextFormat> title_format;
-        ComPtr<IDWriteTextFormat> status_format;
         ComPtr<IDWriteTextFormat> value_format;
         ComPtr<IDWriteTextFormat> label_format;
-        ComPtr<IDWriteTextFormat> setting_format;
-        ComPtr<IDWriteTextFormat> shortcut_format;
-        ComPtr<IDWriteTextFormat> body_format;
+        ComPtr<IDWriteTextFormat> metadata_format;
+        ComPtr<IDWriteTextFormat> mode_format;
+        ComPtr<IDWriteTextFormat> footer_format;
+        ComPtr<IDWriteTextFormat> badge_format;
 
         ComPtr<ID2D1HwndRenderTarget> render_target;
         ComPtr<ID2D1SolidColorBrush> surface_brush;
@@ -78,12 +74,11 @@ namespace ui::detail {
         ComPtr<ID2D1SolidColorBrush> primary_text_brush;
         ComPtr<ID2D1SolidColorBrush> secondary_text_brush;
         ComPtr<ID2D1SolidColorBrush> accent_brush;
-        ComPtr<ID2D1SolidColorBrush> status_fill_brush;
-        ComPtr<ID2D1SolidColorBrush> status_text_brush;
+        ComPtr<ID2D1SolidColorBrush> mode_fill_brush;
+        ComPtr<ID2D1SolidColorBrush> switch_track_brush;
 
-        std::array<ValueLayoutCache, 2> measurement_value_layouts;
-        std::array<ValueLayoutCache, 2> calibration_value_layouts;
-        DpiResultLayoutCache calibration_dpi_layout;
+        std::array<TextLayoutCache, 2> measurement_value_layouts;
+        TextLayoutCache calibration_dpi_layout;
 
         ~UiState() {
             if (root_menu != nullptr) {
@@ -94,12 +89,19 @@ namespace ui::detail {
     };
 
     struct PageLayout {
+        float scale = 1.0f;
         float content_width = 0.0f;
-        float inner_padding = 0.0f;
-        float main_height = 0.0f;
-        D2D1_RECT_F main_card{};
-        D2D1_RECT_F instruction_card{};
-        D2D1_RECT_F status_bounds{};
+        float card_gap = 0.0f;
+        float card_padding = 0.0f;
+        float card_radius = 0.0f;
+        D2D1_RECT_F header_bounds{};
+        D2D1_RECT_F mode_pill_bounds{};
+        D2D1_RECT_F metadata_bounds{};
+        D2D1_RECT_F data_bounds{};
+        D2D1_RECT_F footer_bounds{};
+        D2D1_RECT_F shortcut_badge_bounds{};
+        D2D1_RECT_F shortcut_text_bounds{};
+        D2D1_RECT_F switch_track_bounds{};
     };
 
     struct SharedDataSnapshot {
@@ -113,12 +115,18 @@ namespace ui::detail {
     double convert_distance(double raw_count, int reference_dpi, Unit unit) noexcept;
     double calibration_dpi(double dx, double dy, int calibration_distance_cm) noexcept;
     SharedDataSnapshot capture_shared_data() noexcept;
+    PageLayout calculate_page_layout(float width, float height, float shortcut_badge_width) noexcept;
+    std::array<D2D1_RECT_F, 2> calculate_measurement_card_bounds(const PageLayout& layout) noexcept;
+    int format_distance_value(double raw_count, int reference_dpi, Unit unit, wchar_t* text, size_t capacity) noexcept;
+    int format_measurement_metadata(int reference_dpi, Unit unit, wchar_t* text, size_t capacity) noexcept;
+    int format_calibration_metadata(int calibration_distance_cm, int reference_dpi, Unit unit, wchar_t* text, size_t capacity) noexcept;
 
     void draw_text(UiState& state, const wchar_t* text, IDWriteTextFormat* format, const D2D1_RECT_F& bounds, ID2D1Brush* brush, D2D1_DRAW_TEXT_OPTIONS options = D2D1_DRAW_TEXT_OPTIONS_CLIP) noexcept;
     void draw_card(UiState& state, const D2D1_RECT_F& bounds, float radius) noexcept;
-    bool begin_page(UiState& state, const SharedDataSnapshot& shared_data, const wchar_t* title, PageLayout& layout) noexcept;
-    HRESULT update_value_layout(UiState& state, ValueLayoutCache& cache, double raw_count, float width, float height) noexcept;
-    HRESULT update_calibration_dpi_layout(UiState& state, const SharedDataSnapshot& shared_data, float width, float height) noexcept;
+    bool begin_page(UiState& state, const SharedDataSnapshot& shared_data, const wchar_t* mode_name, const wchar_t* metadata, PageLayout& layout) noexcept;
+    HRESULT fitting_numeric_font_size(UiState& state, const wchar_t* const* texts, size_t text_count, float width, float height, float requested_font_size, float& fitted_font_size) noexcept;
+    HRESULT update_numeric_layout(UiState& state, TextLayoutCache& cache, const wchar_t* text, UINT32 suffix_start, float width, float height, float primary_font_size, float suffix_font_size = 0.0f) noexcept;
+    HRESULT update_calibration_dpi_layout(UiState& state, const SharedDataSnapshot& shared_data, float width, float height, float primary_font_size, float suffix_font_size) noexcept;
 
 } // namespace ui::detail
 

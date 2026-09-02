@@ -1,67 +1,28 @@
 #include "ui_internal.hpp"
 
-#include <algorithm>
-#include <array>
 #include <cmath>
 #include <cwchar>
-#include <utility>
+#include <iterator>
 
 namespace ui::detail {
 
-    HRESULT update_calibration_dpi_layout(UiState& state, const SharedDataSnapshot& shared_data, float width, float height) noexcept {
-        DpiResultLayoutCache& cache = state.calibration_dpi_layout;
-        wchar_t text[64]{};
+    HRESULT update_calibration_dpi_layout(UiState& state, const SharedDataSnapshot& shared_data, float width, float height, float primary_font_size, float suffix_font_size) noexcept {
+        wchar_t text[128]{};
         const double counts = std::hypot(shared_data.accumulated_dx, shared_data.accumulated_dy);
-        const int written = counts > 0.0
-            ? swprintf_s(text, L"%.2f DPI", calibration_dpi(shared_data.accumulated_dx, shared_data.accumulated_dy, state.calibration_distance_cm))
-            : swprintf_s(text, L"— DPI");
+        const double dpi = calibration_dpi(shared_data.accumulated_dx, shared_data.accumulated_dy, state.calibration_distance_cm);
+        int written = 0;
+        if (counts <= 0.0) {
+            written = swprintf_s(text, L"\x2014 DPI");
+        } else if (std::isfinite(dpi) && std::abs(dpi) < 1.0e9) {
+            written = swprintf_s(text, L"%.2f DPI", dpi);
+        } else {
+            written = swprintf_s(text, L"%.2e DPI", dpi);
+        }
         if (written <= 0) return E_FAIL;
-        const UINT32 text_length = static_cast<UINT32>(written);
-
-        if (cache.layout != nullptr && cache.display_text_length == text_length && std::wmemcmp(cache.display_text.data(), text, text_length) == 0 && cache.width == width && cache.height == height) return S_OK;
-
-        ComPtr<IDWriteTextLayout> layout;
-        HRESULT result = state.write_factory->CreateTextLayout(text, text_length, state.value_format.Get(), std::max(1.0f, width), std::max(1.0f, height), layout.GetAddressOf());
-        if (FAILED(result)) return result;
-
-        constexpr float default_value_font_size = 48.0f;
-        constexpr float default_unit_font_size = 18.0f;
-        constexpr float minimum_value_font_size = 20.0f;
-        constexpr float minimum_unit_font_size = 9.0f;
         const wchar_t* separator = std::wcschr(text, L' ');
         if (separator == nullptr) return E_FAIL;
-
-        const UINT32 separator_index = static_cast<UINT32>(separator - text);
-        const UINT32 unit_start = separator_index + 1;
-        const DWRITE_TEXT_RANGE value_range{0, unit_start};
-        const DWRITE_TEXT_RANGE unit_range{unit_start, static_cast<UINT32>(written) - unit_start};
-        result = layout->SetFontSize(default_unit_font_size, unit_range);
-        if (FAILED(result)) return result;
-        result = layout->SetFontWeight(DWRITE_FONT_WEIGHT_SEMI_BOLD, unit_range);
-        if (FAILED(result)) return result;
-
-        DWRITE_TEXT_METRICS metrics{};
-        result = layout->GetMetrics(&metrics);
-        if (FAILED(result)) return result;
-        const float usable_width = std::max(1.0f, width - 4.0f);
-        const float usable_height = std::max(1.0f, height - 2.0f);
-        const float width_scale = metrics.widthIncludingTrailingWhitespace > usable_width ? usable_width / metrics.widthIncludingTrailingWhitespace : 1.0f;
-        const float height_scale = metrics.height > usable_height ? usable_height / metrics.height : 1.0f;
-        const float scale = std::min(width_scale, height_scale);
-        if (scale < 1.0f) {
-            constexpr float fit_safety_factor = 0.9f;
-            result = layout->SetFontSize(std::max(minimum_value_font_size, default_value_font_size * scale * fit_safety_factor), value_range);
-            if (FAILED(result)) return result;
-            result = layout->SetFontSize(std::max(minimum_unit_font_size, default_unit_font_size * scale * fit_safety_factor), unit_range);
-            if (FAILED(result)) return result;
-        }
-
-        cache.layout = std::move(layout);
-        std::copy_n(text, text_length + 1, cache.display_text.begin());
-        cache.display_text_length = text_length;
-        cache.width = width;
-        cache.height = height;
-        return S_OK;
+        const UINT32 suffix_start = static_cast<UINT32>(separator - text) + 1;
+        return update_numeric_layout(state, state.calibration_dpi_layout, text, suffix_start, width, height, primary_font_size, suffix_font_size);
     }
 
 } // namespace ui::detail
@@ -69,43 +30,37 @@ namespace ui::detail {
 namespace ui::modes::calibration {
 
     void draw(detail::UiState& state, const detail::SharedDataSnapshot& shared_data) noexcept {
+        wchar_t metadata[192]{};
+        if (detail::format_calibration_metadata(state.calibration_distance_cm, state.reference_dpi, state.unit, metadata, std::size(metadata)) <= 0) return;
+
         detail::PageLayout page{};
-        if (!detail::begin_page(state, shared_data, L"Mouse DPI Calibration", page)) return;
+        if (!detail::begin_page(state, shared_data, L"Calibration", metadata, page)) return;
+        detail::draw_card(state, page.data_bounds, page.card_radius);
 
-        ID2D1HwndRenderTarget* target = state.render_target.Get();
-        const double counts = std::hypot(shared_data.accumulated_dx, shared_data.accumulated_dy);
-        const double target_inches = static_cast<double>(state.calibration_distance_cm) / 2.54;
-        const double target_reference_counts = target_inches * static_cast<double>(state.reference_dpi);
-
-        const float metrics_height = std::clamp(page.main_height * 0.30f, 72.0f, 96.0f);
-        const float metrics_top = page.main_card.bottom - metrics_height;
-        target->DrawLine(D2D1::Point2F(page.main_card.left + page.inner_padding, metrics_top), D2D1::Point2F(page.main_card.right - page.inner_padding, metrics_top), state.border_brush.Get(), 1.0f);
-
-        const D2D1_RECT_F result_bounds = D2D1::RectF(page.main_card.left + page.inner_padding, page.status_bounds.bottom + 4.0f, page.main_card.right - page.inner_padding, metrics_top - 2.0f);
-        const float result_label_bottom = std::min(result_bounds.bottom, result_bounds.top + 24.0f);
-        detail::draw_text(state, L"CALIBRATED DPI", state.label_format.Get(), D2D1::RectF(result_bounds.left, result_bounds.top + 2.0f, result_bounds.right, result_label_bottom), state.secondary_text_brush.Get());
-        const D2D1_RECT_F dpi_value_bounds = D2D1::RectF(result_bounds.left, result_label_bottom, result_bounds.right, result_bounds.bottom);
-        if (SUCCEEDED(detail::update_calibration_dpi_layout(state, shared_data, dpi_value_bounds.right - dpi_value_bounds.left, dpi_value_bounds.bottom - dpi_value_bounds.top))) {
-            target->DrawTextLayout(D2D1::Point2F(dpi_value_bounds.left, dpi_value_bounds.top), state.calibration_dpi_layout.layout.Get(), state.primary_text_brush.Get(), D2D1_DRAW_TEXT_OPTIONS_CLIP);
-        }
-
-        const float center_x = (page.main_card.left + page.main_card.right) * 0.5f;
-        target->DrawLine(D2D1::Point2F(center_x, metrics_top + 12.0f), D2D1::Point2F(center_x, page.main_card.bottom - 12.0f), state.border_brush.Get(), 1.0f);
-        constexpr float column_gap = 14.0f;
-        const std::array<D2D1_RECT_F, 2> metric_bounds{
-            D2D1::RectF(page.main_card.left + page.inner_padding, metrics_top + 5.0f, center_x - column_gap, page.main_card.bottom - 4.0f),
-            D2D1::RectF(center_x + column_gap, metrics_top + 5.0f, page.main_card.right - page.inner_padding, page.main_card.bottom - 4.0f),
-        };
-        constexpr std::array<const wchar_t*, 2> metric_labels{L"CALIBRATION DISTANCE", L"MEASURED DISTANCE"};
-        const std::array<double, 2> metric_counts{target_reference_counts, counts};
-
-        for (size_t index = 0; index < metric_bounds.size(); ++index) {
-            const float label_bottom = std::min(metric_bounds[index].bottom, metric_bounds[index].top + 19.0f);
-            detail::draw_text(state, metric_labels[index], state.label_format.Get(), D2D1::RectF(metric_bounds[index].left, metric_bounds[index].top, metric_bounds[index].right, label_bottom), state.secondary_text_brush.Get());
-            const D2D1_RECT_F value_bounds = D2D1::RectF(metric_bounds[index].left, label_bottom, metric_bounds[index].right, metric_bounds[index].bottom);
-            if (SUCCEEDED(detail::update_value_layout(state, state.calibration_value_layouts[index], metric_counts[index], value_bounds.right - value_bounds.left, value_bounds.bottom - value_bounds.top))) {
-                target->DrawTextLayout(D2D1::Point2F(value_bounds.left, value_bounds.top), state.calibration_value_layouts[index].layout.Get(), state.primary_text_brush.Get(), D2D1_DRAW_TEXT_OPTIONS_CLIP);
-            }
+        const float label_height = 38.0f * page.scale;
+        const D2D1_RECT_F label_bounds = D2D1::RectF(
+            page.data_bounds.left + page.card_padding,
+            page.data_bounds.top + page.card_padding,
+            page.data_bounds.right - page.card_padding,
+            page.data_bounds.top + page.card_padding + label_height);
+        detail::draw_text(state, L"CALIBRATED DPI", state.label_format.Get(), label_bounds, state.secondary_text_brush.Get());
+        const D2D1_RECT_F value_bounds = D2D1::RectF(
+            page.data_bounds.left + page.card_padding,
+            label_bounds.bottom,
+            page.data_bounds.right - page.card_padding,
+            page.data_bounds.bottom - page.card_padding);
+        if (SUCCEEDED(detail::update_calibration_dpi_layout(
+                state,
+                shared_data,
+                value_bounds.right - value_bounds.left,
+                value_bounds.bottom - value_bounds.top,
+                56.0f * page.scale,
+                18.0f * page.scale))) {
+            state.render_target->DrawTextLayout(
+                D2D1::Point2F(value_bounds.left, value_bounds.top),
+                state.calibration_dpi_layout.layout.Get(),
+                state.primary_text_brush.Get(),
+                D2D1_DRAW_TEXT_OPTIONS_CLIP);
         }
     }
 
