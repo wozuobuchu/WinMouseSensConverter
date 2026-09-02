@@ -42,13 +42,8 @@ int WINAPI WinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, _
             DispatchMessageW(&msg);
         }
 
-        // Apply recording-key state transitions before attributing the pending mouse snapshot.
-        const bool keyboard_changed = main_loop::pull_msg_kbd(user_config.recording_key);
-        const bool mouse_changed = main_loop::pull_msg_mouse();
-        const bool changed = keyboard_changed || (public_data::on_recording_ != 0 && mouse_changed);
-
         // Redraw the UI only on the UI timer tick, and only if the content has changed since the last redraw.
-        ui::finish_main_loop_iteration(hwnd, msg, changed);
+        ui::finish_main_loop_iteration(hwnd, msg);
     }
 
     sync::sts_.request_stop();

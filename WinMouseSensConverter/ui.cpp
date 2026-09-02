@@ -2,6 +2,7 @@
 #include "ui_internal.hpp"
 
 #include "Resource.hpp"
+#include "WinMouseSensConverter.hpp"
 #include "sync.hpp"
 
 #include <CommCtrl.h>
@@ -145,6 +146,15 @@ namespace {
         {kCommandRecordingKeyComma, VK_OEM_COMMA, L"COMMA"},
         {kCommandRecordingKeyPeriod, VK_OEM_PERIOD, L"PERIOD"},
     }};
+
+    bool pull_pending_input(UiState& state) noexcept {
+        if (state.user_config == nullptr) return false;
+
+        // Apply recording-key state transitions before attributing the pending mouse snapshot.
+        const bool keyboard_changed = main_loop::pull_msg_kbd(state.user_config->recording_key);
+        const bool mouse_changed = main_loop::pull_msg_mouse();
+        return keyboard_changed || (public_data::on_recording_ != 0 && mouse_changed);
+    }
 
     int scale_for_dpi(int value, UINT dpi) noexcept {
         return MulDiv(value, static_cast<int>(dpi), USER_DEFAULT_SCREEN_DPI);
@@ -1076,7 +1086,10 @@ namespace {
                 return 0;
 
             case WM_TIMER:
-                if (wparam == kUiTimer) return 0;
+                if (wparam == kUiTimer) {
+                    if (state != nullptr && pull_pending_input(*state)) state->redraw_dirty = true;
+                    return 0;
+                }
                 break;
 
             case WM_ERASEBKGND:
@@ -1229,13 +1242,11 @@ namespace ui {
         return false;
     }
 
-    void finish_main_loop_iteration(HWND main_window, const MSG& message, bool content_changed) noexcept {
+    void finish_main_loop_iteration(HWND main_window, const MSG& message) noexcept {
         if (main_window == nullptr || !IsWindow(main_window)) return;
 
         UiState* state = reinterpret_cast<UiState*>(GetWindowLongPtrW(main_window, GWLP_USERDATA));
         if (state == nullptr) return;
-
-        if (content_changed) state->redraw_dirty = true;
 
         const bool redraw_tick = message.hwnd == main_window && message.message == WM_TIMER && message.wParam == kUiTimer;
         if (!redraw_tick || !state->redraw_dirty || state->in_size_move || state->minimized) return;

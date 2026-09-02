@@ -19,8 +19,8 @@ namespace ui {
     // Routes keyboard navigation to any open modeless dialog.
     bool preprocess_modeless_dialog_message(HWND main_window, MSG& message) noexcept;
 
-    // Marks changed UI data dirty and renders it only on the UI timer tick.
-    void finish_main_loop_iteration(HWND main_window, const MSG& message, bool content_changed) noexcept;
+    // Renders dirty UI data only on an outer-main-loop UI timer tick.
+    void finish_main_loop_iteration(HWND main_window, const MSG& message) noexcept;
 
 } // namespace ui
 
