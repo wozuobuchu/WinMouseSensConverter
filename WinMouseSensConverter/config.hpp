@@ -38,7 +38,7 @@ namespace config {
         OutputUnit unit = OutputUnit::cm;
         int calibration_distance_cm = 10;
         AppMode mode = AppMode::measurement;
-        uint16_t recording_key = VK_F1;
+        uint16_t recording_key = VK_F2;
     };
 
     namespace detail {

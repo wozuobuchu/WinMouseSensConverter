@@ -23,7 +23,7 @@ WinMouseSensConverter measures how far your mouse moves while you rotate the in-
 
 It also provides a dedicated DPI calibration mode. Move the mouse once along a ruler by a known physical distance, and the application derives the effective DPI from the two-dimensional Raw Input displacement. Use **Mode → Measurement** for game-distance work and **Mode → Calibration** for ruler-based DPI calibration.
 
-The most common measurement is a full 360-degree turn, usually described as **counts/360°** or **cm/360°**. The application records and displays the mouse's raw X/Y counts in the background, so you can start and stop a measurement with the configured recording key (`F1` by default) while the game remains focused. The horizontal X result is used for sensitivity matching, while Y makes unintended vertical drift visible.
+The most common measurement is a full 360-degree turn, usually described as **counts/360°** or **cm/360°**. The application records and displays the mouse's raw X/Y counts in the background, so you can start and stop a measurement with the configured recording key (`F2` by default) while the game remains focused. The horizontal X result is used for sensitivity matching, while Y makes unintended vertical drift visible.
 
 This is an **empirical measurement and calibration tool**, not a database-driven converter. It does not know each game's internal sensitivity formula and does not change game settings automatically. That makes it useful even when two games use different engines, scales, rounding rules, or undocumented sensitivity behavior.
 
@@ -31,7 +31,7 @@ This is an **empirical measurement and calibration tool**, not a database-driven
 
 - Native Windows desktop application written in C++20.
 - Buffered Raw Input capture on dedicated keyboard and mouse message threads.
-- Configurable background recording control (`F1` by default) without switching away from the game.
+- Configurable background recording control (`F2` by default) without switching away from the game.
 - Different notification sounds when recording starts and stops.
 - Starting a new recording clears the previous measurement; stopping keeps the final value visible.
 - Simultaneous X/Y measurement: right is positive X, left is negative X, down is positive Y, and up is negative Y.
@@ -39,9 +39,10 @@ This is an **empirical measurement and calibration tool**, not a database-driven
 - DPI calibration from a known `10`–`1000 cm` ruler distance using the net two-dimensional X/Y displacement.
 - Output in raw counts, inches, millimeters, centimeters, decimeters, or meters.
 - Reference DPI presets: `100`, `400`, `800`, `1200`, `1600`, `3200`, and `10000`, plus a modeless `Custom...` entry for values from `1` to `999999`.
+- Recording-key presets for `R`, `T`, `F2`, `F5`, `COMMA`, and `PERIOD`, plus a modeless `Custom...` entry for Windows Virtual-Key values from `1` to `254`.
 - The selected mode, Reference DPI, output unit, calibration distance, and recording key are restored from a per-user configuration file.
 - Responsive, Per-Monitor-DPI-aware Direct2D/DirectWrite interface.
-- Modeless About and Instruction windows that do not block input collection.
+- Modeless About, Instruction, and custom-setting windows that do not block input collection.
 - No game injection, process-memory access, network access, telemetry, or saved measurement history; only user configuration is written.
 
 > [!IMPORTANT]
@@ -51,9 +52,9 @@ This is an **empirical measurement and calibration tool**, not a database-driven
 
 1. Set the mouse to the DPI/CPI you want to use in both games. Avoid changing the hardware DPI during the comparison.
 2. Start WinMouseSensConverter and accept the administrator permission prompt.
-3. Open **Options → ReferenceDPI** and select the mouse's actual DPI. Choose **Custom...** to enter an integer from `1` to `999999`; invalid input is ignored and the last valid DPI remains active. For in-game measurement, choose a physical-distance unit suited to the test—usually `cm` for 360° measurements or `mm` for shorter distances. Use `raw` mainly when you need to inspect the underlying counts.
+3. Open **Options → ReferenceDPI** and select the mouse's actual DPI. Choose **Custom...** to enter an integer from `1` to `999999`; invalid input is ignored and the last valid DPI remains active. Choose the recording control under **Options → Recording Key**. For in-game measurement, choose a physical-distance unit suited to the test—usually `cm` for 360° measurements or `mm` for shorter distances. Use `raw` mainly when you need to inspect the underlying counts.
 4. In the baseline game, choose a repeatable camera state and a clear reference point. A wall corner, vertical seam, or other thin landmark works better than a broad object.
-5. Aim at the reference point, place the mouse at a marked starting position, and press the recording key shown in the application window (`F1` by default). The start sound confirms that recording is active and the old measurement has been cleared.
+5. Aim at the reference point, place the mouse at a marked starting position, and press the recording key shown in the application window (`F2` by default). The start sound confirms that recording is active and the old measurement has been cleared.
 6. Rotate horizontally through a known angle—normally exactly 360°—until the crosshair returns to the same reference point.
 7. Press the configured recording key again. The stop sound confirms that recording has ended; the measurement remains visible.
 8. Repeat the trial several times in the same direction. Use the median of the consistent results as the baseline.
@@ -102,16 +103,18 @@ reference_dpi = 800
 unit = cm
 calibration_distance_cm = 10
 mode = measurement
-recording_key = 0x70
+recording_key = 0x71
 ```
 
 Valid units are `raw`, `inch`, `mm`, `cm`, `dm`, and `m`; valid modes are `measurement` and `calibration`; `calibration_distance_cm` must be an integer from `10` through `1000`. Blank lines and spaces or tabs around lines, keys, `=`, and values are allowed; both CRLF and LF line endings are accepted. Key names and enum values are case-sensitive. Unknown extra fields are ignored.
 
 Selecting Calibration Distance → Custom keeps `Custom...` checked for the rest of that run even if the entered value is `10`, `20`, or `50`. Only the numeric value is saved. On the next start, those three values map back to their matching preset; all other valid values map to `Custom...`.
 
-`recording_key` is a Windows Virtual-Key value from `1` through `254`. Decimal values such as `112` and hexadecimal values such as `0x70` or `0X70` are accepted; the application saves the value as two-digit uppercase hexadecimal. The main window displays the system name for the configured key, or `VK 0xNN` when Windows cannot provide one. Only values actually emitted by keyboard Raw Input can trigger recording, and configuration changes take effect on the next application start.
+Selecting Recording Key → Custom keeps `Custom...` checked for the rest of that run even if the entered value matches a preset. On the next start, preset values map back to their matching commands and all other valid values map to `Custom...`.
 
-Every listed field is required. If the file is missing, unreadable, incomplete, duplicated, or contains an invalid value, the application uses the complete defaults (`800`, `cm`, `10 cm`, Measurement mode, and `F1`) and attempts to replace the file. Older configurations without `calibration_distance_cm` or `mode` are therefore reset in full. Changes are saved when the application exits normally. Configuration failures never prevent startup and measurement/calibration results are never saved.
+`recording_key` is a Windows Virtual-Key value from `1` through `254`. Decimal values such as `113` and hexadecimal values such as `0x71` or `0X71` are accepted; the application saves the value as two-digit uppercase hexadecimal. The modeless custom input accepts up to four characters: decimal `1`–`254`, or `0x`/`0X` followed by one or two hexadecimal digits. Invalid input leaves the last valid key active. The main window displays the system name for the configured key, or `VK 0xNN` when Windows cannot provide one. Only values actually emitted by keyboard Raw Input can trigger recording. Changes made through **Options → Recording Key** take effect immediately; manual configuration-file edits take effect on the next application start.
+
+Every listed field is required. If the file is missing, unreadable, incomplete, duplicated, or contains an invalid value, the application uses the complete defaults (`800`, `cm`, `10 cm`, Measurement mode, and `F2`) and attempts to replace the file. Older configurations without `calibration_distance_cm` or `mode` are therefore reset in full. Existing valid configurations, including those that select `F1`, remain unchanged. Changes are saved when the application exits normally. Configuration failures never prevent startup and measurement/calibration results are never saved.
 
 ### A reliable cross-game workflow
 
@@ -420,7 +423,7 @@ WinMouseSensConverter 用来测量玩家在游戏中将视角水平旋转一个�
 
 程序还提供独立的 DPI 定标模式：让鼠标沿尺子移动一段已知物理距离，程序根据二维 Raw Input 净位移计算鼠标的有效 DPI。游戏测距使用 **Mode → Measurement**，尺子定标使用 **Mode → Calibration**。
 
-最常见的基准是完整旋转 360°，结果通常称为 **counts/360°** 或 **cm/360°**。程序会在后台记录并显示鼠标的 X/Y 原始计数，因此游戏保持焦点时也可以使用配置的录制按键（默认为 `F1`）开始和停止测量。水平 X 结果用于灵敏度匹配，Y 结果则用于观察意外的垂直偏移。
+最常见的基准是完整旋转 360°，结果通常称为 **counts/360°** 或 **cm/360°**。程序会在后台记录并显示鼠标的 X/Y 原始计数，因此游戏保持焦点时也可以使用配置的录制按键（默认为 `F2`）开始和停止测量。水平 X 结果用于灵敏度匹配，Y 结果则用于观察意外的垂直偏移。
 
 这是一个基于实测的**测量与校准工具**，而不是依靠游戏数据库的自动换算器。它不了解每款游戏内部的灵敏度公式，也不会自动修改游戏设置。因此，即使两款游戏使用不同引擎、数值范围、舍入规则或未公开的灵敏度算法，也可以通过实际旋转结果进行匹配。
 
@@ -428,7 +431,7 @@ WinMouseSensConverter 用来测量玩家在游戏中将视角水平旋转一个�
 
 - 使用 C++20 编写的原生 Windows 桌面应用。
 - 键盘和鼠标各自由独立消息线程批量读取 Raw Input。
-- 游戏保持前台时，可在后台通过配置按键控制记录，默认按键为 `F1`。
+- 游戏保持前台时，可在后台通过配置按键控制记录，默认按键为 `F2`。
 - 开始与停止记录会播放不同的系统提示音。
 - 开始新记录时自动清除上一次结果；停止后最终结果保持显示。
 - 同时显示 X/Y 位移：向右为 X 正方向，向左为 X 负方向，向下为 Y 正方向，向上为 Y 负方向。
@@ -436,9 +439,10 @@ WinMouseSensConverter 用来测量玩家在游戏中将视角水平旋转一个�
 - 根据 `10`～`1000 cm` 的已知尺子距离和二维 X/Y 净位移定标有效 DPI。
 - 支持 raw counts、英寸、毫米、厘米、分米和米。
 - Reference DPI 预设：`100`、`400`、`800`、`1200`、`1600`、`3200`、`10000`，并提供非模态 `Custom...` 选项，可输入 `1`～`999999`。
+- 录制按键预设：`R`、`T`、`F2`、`F5`、`COMMA`、`PERIOD`，并提供非模态 `Custom...` 选项，可输入 `1`～`254` 的 Windows Virtual-Key 值。
 - 所选模式、Reference DPI、输出单位、定标距离和录制按键会保存到当前用户的配置文件，并在下次启动时恢复。
 - 使用 Direct2D/DirectWrite 渲染，并支持 Per-Monitor DPI 的响应式界面。
-- “关于”和“使用说明”窗口为非模态窗口，不会阻塞输入采集。
+- “关于”、“使用说明”和自定义设置窗口均为非模态窗口，不会阻塞输入采集。
 - 不注入游戏、不读取游戏进程内存、不访问网络、不包含遥测，也不保存测量历史；程序只写入用户配置。
 
 > [!IMPORTANT]
@@ -448,9 +452,9 @@ WinMouseSensConverter 用来测量玩家在游戏中将视角水平旋转一个�
 
 1. 将鼠标设为你准备在两款游戏中使用的 DPI/CPI，比较过程中不要切换硬件 DPI。
 2. 启动 WinMouseSensConverter，并接受管理员权限提示。
-3. 打开 **Options → ReferenceDPI**，选择鼠标的实际 DPI。选择 **Custom...** 可输入 `1`～`999999` 的整数；无效输入会被忽略，并继续使用上一个有效 DPI。游戏内实测时，建议选择与测量距离匹配的物理单位：360° 测量通常使用 `cm`，较短距离可以使用 `mm`；只有需要检查底层计数时才主要使用 `raw`。
+3. 打开 **Options → ReferenceDPI**，选择鼠标的实际 DPI。选择 **Custom...** 可输入 `1`～`999999` 的整数；无效输入会被忽略，并继续使用上一个有效 DPI。通过 **Options → Recording Key** 选择录制按键。游戏内实测时，建议选择与测量距离匹配的物理单位：360° 测量通常使用 `cm`，较短距离可以使用 `mm`；只有需要检查底层计数时才主要使用 `raw`。
 4. 在基准游戏中选择可重复的视角状态和清晰参照点。墙角、垂直接缝等细窄标志通常比宽大的物体更容易精确对齐。
-5. 将准星对准参照点，把鼠标放在标记好的起始位置，然后按下程序主界面显示的录制按键（默认为 `F1`）。听到开始提示音后，记录已启动，旧结果也已清零。
+5. 将准星对准参照点，把鼠标放在标记好的起始位置，然后按下程序主界面显示的录制按键（默认为 `F2`）。听到开始提示音后，记录已启动，旧结果也已清零。
 6. 水平旋转一个已知角度——通常是精确的 360°——直到准星重新回到同一个参照点。
 7. 再次按下配置的录制按键。停止提示音表示记录已经结束，最终测量值会保留在界面上。
 8. 使用相同方向重复测量多次，以稳定结果的中位数作为基准。
@@ -499,16 +503,18 @@ reference_dpi = 800
 unit = cm
 calibration_distance_cm = 10
 mode = measurement
-recording_key = 0x70
+recording_key = 0x71
 ```
 
 合法单位为 `raw`、`inch`、`mm`、`cm`、`dm` 和 `m`；合法模式为 `measurement` 和 `calibration`；`calibration_distance_cm` 必须是 `10`～`1000` 的整数。文件可以包含空行，也允许在每行、键名、`=` 和值的两侧使用空格或制表符；CRLF 与 LF 换行均可正常解析。键名及枚举值区分大小写，未知的额外字段会被忽略。
 
 通过 Calibration Distance → Custom 提交后，即使输入的是 `10`、`20` 或 `50`，本次运行也保持勾选 `Custom...`。配置只保存数值；下次启动时，这三个数值会重新映射到对应预设，其他合法值则勾选 `Custom...`。
 
-`recording_key` 是 `1`～`254` 的 Windows Virtual-Key 数值。可以使用 `112` 这样的十进制值，也可以使用 `0x70` 或 `0X70` 这样的十六进制值；程序保存时会统一写成两位大写十六进制。主界面会显示该按键的系统名称；如果 Windows 无法提供名称，则显示 `VK 0xNN`。只有键盘 Raw Input 实际产生的 VK 值才能触发录制，手工修改配置后需要重启程序才能生效。
+通过 Recording Key → Custom 提交后，即使输入值与某个预设相同，本次运行也保持勾选 `Custom...`。下次启动时，预设值会重新映射到对应菜单项，其他合法值则勾选 `Custom...`。
 
-上述每个字段都是必需字段。如果配置文件不存在、无法读取、字段缺失或重复，或者包含无效值，程序会恢复全部默认值（`800`、`cm`、`10 cm`、Measurement 模式和 `F1`），并尝试重建配置文件。因此，不含 `calibration_distance_cm` 或 `mode` 的旧配置会整体重置。设置会在程序正常退出时保存；配置读写失败不会阻止程序启动，测距和定标结果都不会写入配置文件。
+`recording_key` 是 `1`～`254` 的 Windows Virtual-Key 数值。可以使用 `113` 这样的十进制值，也可以使用 `0x71` 或 `0X71` 这样的十六进制值；程序保存时会统一写成两位大写十六进制。非模态自定义输入框最多接受 4 个字符：十进制 `1`～`254`，或 `0x`/`0X` 后跟一至两位十六进制数字。非法输入不会改变最后一个合法按键。主界面会显示该按键的系统名称；如果 Windows 无法提供名称，则显示 `VK 0xNN`。只有键盘 Raw Input 实际产生的 VK 值才能触发录制。通过 **Options → Recording Key** 修改会立即生效；手工修改配置文件后仍需重启程序。
+
+上述每个字段都是必需字段。如果配置文件不存在、无法读取、字段缺失或重复，或者包含无效值，程序会恢复全部默认值（`800`、`cm`、`10 cm`、Measurement 模式和 `F2`），并尝试重建配置文件。因此，不含 `calibration_distance_cm` 或 `mode` 的旧配置会整体重置。已有的合法配置（包括选择 `F1` 的配置）会保持不变。设置会在程序正常退出时保存；配置读写失败不会阻止程序启动，测距和定标结果都不会写入配置文件。
 
 ### 可靠的跨游戏测量流程
 

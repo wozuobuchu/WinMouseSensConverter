@@ -21,6 +21,7 @@ namespace automatic_test {
 
     void add_config_tests(TestRunner& runner) {
         runner.run("config scalar parsers accept boundaries", [&] {
+            TEST_EXPECT(runner, config::UserConfig{}.recording_key == VK_F2);
             TEST_EXPECT(runner, config::detail::parse_reference_dpi("1") == 1);
             TEST_EXPECT(runner, config::detail::parse_reference_dpi("999999") == 999999);
             TEST_EXPECT(runner, !config::detail::parse_reference_dpi("0").has_value());
@@ -34,6 +35,8 @@ namespace automatic_test {
 
             TEST_EXPECT(runner, config::detail::parse_recording_key("1") == 1);
             TEST_EXPECT(runner, config::detail::parse_recording_key("254") == 254);
+            TEST_EXPECT(runner, config::detail::parse_recording_key("0x1") == 1);
+            TEST_EXPECT(runner, config::detail::parse_recording_key("0x01") == 1);
             TEST_EXPECT(runner, config::detail::parse_recording_key("0x70") == VK_F1);
             TEST_EXPECT(runner, config::detail::parse_recording_key("0XfE") == 254);
             TEST_EXPECT(runner, !config::detail::parse_recording_key("0").has_value());
@@ -152,6 +155,17 @@ namespace automatic_test {
             config::UserConfig invalid = user_config;
             invalid.unit = static_cast<config::OutputUnit>(255);
             TEST_EXPECT(runner, !config::detail::serialize(invalid).has_value());
+        });
+
+        runner.run("default recording key serializes and round trips as F2", [&] {
+            const config::UserConfig defaults{};
+            const auto serialized = config::detail::serialize(defaults);
+            TEST_EXPECT(runner, serialized.has_value());
+            TEST_EXPECT(runner, serialized->find("recording_key = 0x71\r\n") != std::string::npos);
+
+            const auto reparsed = config::detail::parse_configuration(*serialized);
+            TEST_EXPECT(runner, reparsed.has_value());
+            TEST_EXPECT(runner, reparsed->recording_key == VK_F2);
         });
     }
 

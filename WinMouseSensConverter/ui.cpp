@@ -71,6 +71,16 @@ namespace {
     constexpr UINT kCommandCalibrationDistanceCustom = 1123;
     constexpr UINT kCommandCalibrationDistanceLast = 1123;
 
+    constexpr UINT kCommandRecordingKeyFirst = 1130;
+    constexpr UINT kCommandRecordingKeyR = 1130;
+    constexpr UINT kCommandRecordingKeyT = 1131;
+    constexpr UINT kCommandRecordingKeyF2 = 1132;
+    constexpr UINT kCommandRecordingKeyF5 = 1133;
+    constexpr UINT kCommandRecordingKeyComma = 1134;
+    constexpr UINT kCommandRecordingKeyPeriod = 1135;
+    constexpr UINT kCommandRecordingKeyCustom = 1136;
+    constexpr UINT kCommandRecordingKeyLast = 1136;
+
     constexpr UINT kCommandEditConfiguration = 1150;
     constexpr UINT kCommandAbout = 1200;
     constexpr UINT kCommandInstruction = 1201;
@@ -93,6 +103,12 @@ namespace {
     struct CalibrationDistanceMenuEntry {
         UINT command;
         int distance_cm;
+        const wchar_t* label;
+    };
+
+    struct RecordingKeyMenuEntry {
+        UINT command;
+        uint16_t virtual_key;
         const wchar_t* label;
     };
 
@@ -119,6 +135,15 @@ namespace {
         {kCommandCalibrationDistance10, 10, L"10 cm"},
         {kCommandCalibrationDistance20, 20, L"20 cm"},
         {kCommandCalibrationDistance50, 50, L"50 cm"},
+    }};
+
+    constexpr std::array<RecordingKeyMenuEntry, 6> kRecordingKeyMenuEntries{{
+        {kCommandRecordingKeyR, 'R', L"R"},
+        {kCommandRecordingKeyT, 'T', L"T"},
+        {kCommandRecordingKeyF2, VK_F2, L"F2"},
+        {kCommandRecordingKeyF5, VK_F5, L"F5"},
+        {kCommandRecordingKeyComma, VK_OEM_COMMA, L"COMMA"},
+        {kCommandRecordingKeyPeriod, VK_OEM_PERIOD, L"PERIOD"},
     }};
 
     int scale_for_dpi(int value, UINT dpi) noexcept {
@@ -154,6 +179,38 @@ namespace {
 
         if (value < 10 || value > 1000) return std::nullopt;
         return value;
+    }
+
+    constexpr std::optional<uint16_t> parse_recording_key(std::wstring_view text) noexcept {
+        if (text.empty() || text.size() > 4) return std::nullopt;
+
+        unsigned int base = 10;
+        if (text.starts_with(L"0x") || text.starts_with(L"0X")) {
+            base = 16;
+            text.remove_prefix(2);
+        }
+        if (text.empty()) return std::nullopt;
+
+        unsigned int value = 0;
+        for (const wchar_t character : text) {
+            unsigned int digit = 0;
+            if (character >= L'0' && character <= L'9') {
+                digit = static_cast<unsigned int>(character - L'0');
+            } else if (base == 16 && character >= L'a' && character <= L'f') {
+                digit = static_cast<unsigned int>(character - L'a') + 10;
+            } else if (base == 16 && character >= L'A' && character <= L'F') {
+                digit = static_cast<unsigned int>(character - L'A') + 10;
+            } else {
+                return std::nullopt;
+            }
+
+            if (digit >= base) return std::nullopt;
+            value = value * base + digit;
+            if (value > 254) return std::nullopt;
+        }
+
+        if (value == 0) return std::nullopt;
+        return static_cast<uint16_t>(value);
     }
 
     HRESULT create_text_format(IDWriteFactory* factory, float font_size, DWRITE_FONT_WEIGHT weight, DWRITE_TEXT_ALIGNMENT alignment, DWRITE_PARAGRAPH_ALIGNMENT paragraph_alignment, IDWriteTextFormat** format) noexcept {
@@ -236,6 +293,7 @@ namespace {
     }
 
     void initialize_recording_key_display(UiState& state, uint16_t recording_key) noexcept {
+        state.shortcut_badge_width = 48.0f;
         const UINT scan_code = MapVirtualKeyW(recording_key, MAPVK_VK_TO_VSC_EX);
         LONG key_name_parameter = static_cast<LONG>((scan_code & 0xFFu) << 16);
         if ((scan_code & 0xFF00u) != 0 || uses_extended_key_name(recording_key)) key_name_parameter |= 1L << 24;
@@ -340,14 +398,16 @@ namespace {
         HMENU dpi_menu = CreatePopupMenu();
         HMENU unit_menu = CreatePopupMenu();
         HMENU calibration_distance_menu = CreatePopupMenu();
+        HMENU recording_key_menu = CreatePopupMenu();
         HMENU help = CreatePopupMenu();
-        if (root == nullptr || mode_menu == nullptr || options == nullptr || dpi_menu == nullptr || unit_menu == nullptr || calibration_distance_menu == nullptr || help == nullptr) {
+        if (root == nullptr || mode_menu == nullptr || options == nullptr || dpi_menu == nullptr || unit_menu == nullptr || calibration_distance_menu == nullptr || recording_key_menu == nullptr || help == nullptr) {
             if (root != nullptr) DestroyMenu(root);
             if (mode_menu != nullptr) DestroyMenu(mode_menu);
             if (options != nullptr) DestroyMenu(options);
             if (dpi_menu != nullptr) DestroyMenu(dpi_menu);
             if (unit_menu != nullptr) DestroyMenu(unit_menu);
             if (calibration_distance_menu != nullptr) DestroyMenu(calibration_distance_menu);
+            if (recording_key_menu != nullptr) DestroyMenu(recording_key_menu);
             if (help != nullptr) DestroyMenu(help);
             return nullptr;
         }
@@ -367,10 +427,16 @@ namespace {
         }
         AppendMenuW(calibration_distance_menu, MF_SEPARATOR, 0, nullptr);
         AppendMenuW(calibration_distance_menu, MF_STRING, kCommandCalibrationDistanceCustom, L"Custom...");
+        for (const RecordingKeyMenuEntry& entry : kRecordingKeyMenuEntries) {
+            AppendMenuW(recording_key_menu, MF_STRING, entry.command, entry.label);
+        }
+        AppendMenuW(recording_key_menu, MF_SEPARATOR, 0, nullptr);
+        AppendMenuW(recording_key_menu, MF_STRING, kCommandRecordingKeyCustom, L"Custom...");
 
         AppendMenuW(options, MF_POPUP, reinterpret_cast<UINT_PTR>(dpi_menu), L"ReferenceDPI");
         AppendMenuW(options, MF_POPUP, reinterpret_cast<UINT_PTR>(unit_menu), L"Unit");
         AppendMenuW(options, MF_POPUP, reinterpret_cast<UINT_PTR>(calibration_distance_menu), L"Calibration Distance");
+        AppendMenuW(options, MF_POPUP, reinterpret_cast<UINT_PTR>(recording_key_menu), L"Recording Key");
         AppendMenuW(options, MF_SEPARATOR, 0, nullptr);
         AppendMenuW(options, MF_STRING, kCommandEditConfiguration, L"Edit Configuration File...");
         AppendMenuW(help, MF_STRING, kCommandAbout, L"About");
@@ -385,6 +451,7 @@ namespace {
         CheckMenuRadioItem(root, kCommandDpiFirst, kCommandDpiLast, kCommandDpi800, MF_BYCOMMAND);
         CheckMenuRadioItem(root, kCommandUnitFirst, kCommandUnitLast, kCommandUnitCm, MF_BYCOMMAND);
         CheckMenuRadioItem(root, kCommandCalibrationDistanceFirst, kCommandCalibrationDistanceLast, kCommandCalibrationDistance10, MF_BYCOMMAND);
+        CheckMenuRadioItem(root, kCommandRecordingKeyFirst, kCommandRecordingKeyLast, kCommandRecordingKeyF2, MF_BYCOMMAND);
         return root;
     }
 
@@ -430,6 +497,7 @@ namespace {
         CheckMenuRadioItem(root_menu, kCommandDpiFirst, kCommandDpiLast, state.reference_dpi_command, MF_BYCOMMAND);
         CheckMenuRadioItem(root_menu, kCommandUnitFirst, kCommandUnitLast, unit_command, MF_BYCOMMAND);
         CheckMenuRadioItem(root_menu, kCommandCalibrationDistanceFirst, kCommandCalibrationDistanceLast, state.calibration_distance_command, MF_BYCOMMAND);
+        CheckMenuRadioItem(root_menu, kCommandRecordingKeyFirst, kCommandRecordingKeyLast, state.recording_key_command, MF_BYCOMMAND);
     }
 
     UINT dpi_command_for_value(int reference_dpi) noexcept {
@@ -444,6 +512,13 @@ namespace {
             if (entry.distance_cm == distance_cm) return entry.command;
         }
         return kCommandCalibrationDistanceCustom;
+    }
+
+    UINT recording_key_command_for_value(uint16_t virtual_key) noexcept {
+        for (const RecordingKeyMenuEntry& entry : kRecordingKeyMenuEntries) {
+            if (entry.virtual_key == virtual_key) return entry.command;
+        }
+        return kCommandRecordingKeyCustom;
     }
 
     enum class HelpDialogKind : uint8_t {
@@ -711,6 +786,87 @@ namespace {
         return FALSE;
     }
 
+    INT_PTR CALLBACK custom_recording_key_dialog_proc(HWND dialog, UINT message, WPARAM wparam, LPARAM lparam) noexcept {
+        UiState* state = reinterpret_cast<UiState*>(GetWindowLongPtrW(dialog, DWLP_USER));
+
+        switch (message) {
+            case WM_INITDIALOG: {
+                state = reinterpret_cast<UiState*>(lparam);
+                if (state == nullptr) {
+                    DestroyWindow(dialog);
+                    return TRUE;
+                }
+                SetWindowLongPtrW(dialog, DWLP_USER, reinterpret_cast<LONG_PTR>(state));
+
+                const HINSTANCE instance = reinterpret_cast<HINSTANCE>(GetWindowLongPtrW(dialog, GWLP_HINSTANCE));
+                SendMessageW(dialog, WM_SETICON, ICON_BIG, reinterpret_cast<LPARAM>(LoadIconW(instance, MAKEINTRESOURCEW(IDI_WINMOUSESENSCONVERTER))));
+                SendMessageW(dialog, WM_SETICON, ICON_SMALL, reinterpret_cast<LPARAM>(LoadIconW(instance, MAKEINTRESOURCEW(IDI_SMALL))));
+                apply_native_dialog_theme(dialog);
+                SetDlgItemInt(dialog, IDC_CUSTOM_RECORDING_KEY_VALUE, static_cast<UINT>(state->user_config->recording_key), FALSE);
+                SendDlgItemMessageW(dialog, IDC_CUSTOM_RECORDING_KEY_VALUE, EM_SETLIMITTEXT, 4, 0);
+                center_dialog_on_owner(dialog, state->hwnd);
+
+                const HWND edit = GetDlgItem(dialog, IDC_CUSTOM_RECORDING_KEY_VALUE);
+                if (edit != nullptr) {
+                    SetFocus(edit);
+                    SendMessageW(edit, EM_SETSEL, 0, -1);
+                    return FALSE;
+                }
+                return TRUE;
+            }
+
+            case WM_COMMAND:
+                switch (LOWORD(wparam)) {
+                    case IDOK: {
+                        if (state == nullptr) return TRUE;
+
+                        wchar_t text[5]{};
+                        const UINT length = GetDlgItemTextW(dialog, IDC_CUSTOM_RECORDING_KEY_VALUE, text, static_cast<int>(std::size(text)));
+                        const std::optional<uint16_t> parsed = parse_recording_key(std::wstring_view(text, length));
+                        if (!parsed.has_value()) {
+                            const HWND edit = GetDlgItem(dialog, IDC_CUSTOM_RECORDING_KEY_VALUE);
+                            if (edit != nullptr) {
+                                SetFocus(edit);
+                                SendMessageW(edit, EM_SETSEL, 0, -1);
+                            }
+                            return TRUE;
+                        }
+
+                        const bool changed = state->user_config->recording_key != *parsed || state->recording_key_command != kCommandRecordingKeyCustom;
+                        state->user_config->recording_key = *parsed;
+                        state->recording_key_command = kCommandRecordingKeyCustom;
+                        initialize_recording_key_display(*state, *parsed);
+                        update_menu_selection(*state);
+                        if (changed) state->redraw_dirty = true;
+                        DestroyWindow(dialog);
+                        return TRUE;
+                    }
+
+                    case IDCANCEL:
+                        DestroyWindow(dialog);
+                        return TRUE;
+
+                    default:
+                        break;
+                }
+                break;
+
+            case WM_CLOSE:
+                DestroyWindow(dialog);
+                return TRUE;
+
+            case WM_NCDESTROY:
+                SetWindowLongPtrW(dialog, DWLP_USER, 0);
+                if (state != nullptr && state->custom_recording_key_dialog == dialog) state->custom_recording_key_dialog = nullptr;
+                break;
+
+            default:
+                break;
+        }
+
+        return FALSE;
+    }
+
     void show_modeless_dialog(UiState& state, int resource_id, HWND& slot, DLGPROC procedure) noexcept {
         if (slot != nullptr && IsWindow(slot)) {
             ShowWindow(slot, IsIconic(slot) ? SW_RESTORE : SW_SHOWNORMAL);
@@ -738,6 +894,7 @@ namespace {
         close_modeless_dialog(state.instruction_dialog);
         close_modeless_dialog(state.custom_dpi_dialog);
         close_modeless_dialog(state.custom_calibration_distance_dialog);
+        close_modeless_dialog(state.custom_recording_key_dialog);
     }
 
     void open_configuration_directory(HWND owner) noexcept {
@@ -809,12 +966,28 @@ namespace {
             }
         }
 
+        for (const RecordingKeyMenuEntry& entry : kRecordingKeyMenuEntries) {
+            if (entry.command == command) {
+                if (state.user_config->recording_key != entry.virtual_key || state.recording_key_command != entry.command) {
+                    state.user_config->recording_key = entry.virtual_key;
+                    state.recording_key_command = entry.command;
+                    initialize_recording_key_display(state, entry.virtual_key);
+                    update_menu_selection(state);
+                    state.redraw_dirty = true;
+                }
+                return true;
+            }
+        }
+
         switch (command) {
             case kCommandDpiCustom:
                 show_modeless_dialog(state, IDD_CUSTOM_DPI, state.custom_dpi_dialog, custom_dpi_dialog_proc);
                 return true;
             case kCommandCalibrationDistanceCustom:
                 show_modeless_dialog(state, IDD_CUSTOM_CALIBRATION_DISTANCE, state.custom_calibration_distance_dialog, custom_calibration_distance_dialog_proc);
+                return true;
+            case kCommandRecordingKeyCustom:
+                show_modeless_dialog(state, IDD_CUSTOM_RECORDING_KEY, state.custom_recording_key_dialog, custom_recording_key_dialog_proc);
                 return true;
             case kCommandEditConfiguration:
                 open_configuration_directory(state.hwnd);
@@ -992,6 +1165,7 @@ namespace ui {
             state->unit = user_config.unit;
             state->calibration_distance_cm = user_config.calibration_distance_cm;
             state->calibration_distance_command = calibration_distance_command_for_value(user_config.calibration_distance_cm);
+            state->recording_key_command = recording_key_command_for_value(user_config.recording_key);
             if (FAILED(initialize_device_independent_resources(*state))) {
                 show_startup_rendering_error();
                 return nullptr;
@@ -1048,7 +1222,7 @@ namespace ui {
         UiState* state = reinterpret_cast<UiState*>(GetWindowLongPtrW(main_window, GWLP_USERDATA));
         if (state == nullptr) return false;
 
-        const std::array<HWND, 4> dialogs{state->about_dialog, state->instruction_dialog, state->custom_dpi_dialog, state->custom_calibration_distance_dialog};
+        const std::array<HWND, 5> dialogs{state->about_dialog, state->instruction_dialog, state->custom_dpi_dialog, state->custom_calibration_distance_dialog, state->custom_recording_key_dialog};
         for (HWND dialog : dialogs) {
             if (dialog != nullptr && IsWindow(dialog) && IsDialogMessageW(dialog, &message)) return true;
         }

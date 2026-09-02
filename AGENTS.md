@@ -6,15 +6,15 @@ WinMouseSensConverter is a native Windows desktop application written in C++20. 
 
 Key behavior:
 
-- Pressing F1 starts or stops recording.
+- Pressing the configured recording key starts or stops recording.
 - Starting a recording clears the previous measurement.
 - Measurement mode displays signed X/Y movement: right/down are positive and left/up are negative.
 - Calibration mode uses `hypot(dx, dy)` and `calibrated_dpi = counts / (calibration_distance_cm / 2.54)`. Reference DPI and output unit affect the displayed comparison distances, not the calibrated-DPI result.
 - Switching modes preserves the active recording and accumulated X/Y values.
-- Default settings are Measurement mode, `800` Reference DPI, `cm`, a `10 cm` calibration distance, and `F1`.
+- Default settings are Measurement mode, `800` Reference DPI, `cm`, a `10 cm` calibration distance, and `F2`.
 - Supported output units are raw counts, inches, millimeters, centimeters, decimeters, and meters.
 - Keyboard and mouse Raw Input are collected by dedicated message threads. The main UI thread consumes their queues and renders with Direct2D and DirectWrite.
-- About, Instruction, custom DPI, and custom calibration-distance windows are modeless. UI work must not block the main UI loop or either Raw Input thread.
+- About, Instruction, custom DPI, custom calibration-distance, and custom recording-key windows are modeless. UI work must not block the main UI loop or either Raw Input thread.
 - The executable manifest requires administrator privileges at startup.
 
 ## Build policy

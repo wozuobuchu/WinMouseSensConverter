@@ -48,6 +48,7 @@ namespace ui::detail {
         HWND instruction_dialog = nullptr;
         HWND custom_dpi_dialog = nullptr;
         HWND custom_calibration_distance_dialog = nullptr;
+        HWND custom_recording_key_dialog = nullptr;
         HMENU root_menu = nullptr;
         bool owned_by_window = false;
         bool in_size_move = false;
@@ -55,9 +56,10 @@ namespace ui::detail {
         bool redraw_dirty = true;
         UINT dpi = USER_DEFAULT_SCREEN_DPI;
         config::UserConfig* user_config = nullptr;
-        std::array<wchar_t, 64> recording_key_name{L'F', L'1', L'\0'};
+        std::array<wchar_t, 64> recording_key_name{L'F', L'2', L'\0'};
         UINT32 recording_key_name_length = 2;
         float shortcut_badge_width = 48.0f;
+        UINT recording_key_command = 0;
 
         int reference_dpi = 800;
         UINT reference_dpi_command = 0;
