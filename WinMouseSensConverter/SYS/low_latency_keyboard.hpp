@@ -165,6 +165,8 @@ namespace rawinput {
         }
 
         inline static void message_thread_proc(std::promise<bool> ready) noexcept {
+            (void)SetThreadDescription(GetCurrentThread(), L"THREAD_KeyboardRawInput");
+
             const HINSTANCE instance = GetModuleHandleW(nullptr);
             constexpr const wchar_t* class_name = L"LowLatencyKeyboardBufferedMessageWindow";
 
