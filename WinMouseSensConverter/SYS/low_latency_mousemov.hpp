@@ -32,6 +32,7 @@ namespace rawinput {
 
         inline static constexpr size_t kRawInputBatchCapacity = 64;
         inline static constexpr DWORD kRawInputBatchIntervalMs = 1;
+        inline static constexpr DWORD kMessageLoopRetryDelayMs = 1;
         inline static constexpr DWORD kControlWakeMask = QS_ALLINPUT & ~static_cast<DWORD>(QS_RAWINPUT);
 
         LowLatencyMouseMov() = delete;
@@ -128,6 +129,8 @@ namespace rawinput {
                     current = NEXTRAWINPUTBLOCK(current);
                 }
             }
+
+            return false;
         }
 
         inline static void message_thread_proc(std::promise<bool> ready) noexcept {
@@ -189,8 +192,10 @@ namespace rawinput {
                     kControlWakeMask,
                     MWMO_INPUTAVAILABLE
                 );
-                if (wait_result == WAIT_FAILED) break;
-                if (!drain_raw_input_buffer(buffer)) break;
+                bool retry_needed = wait_result == WAIT_FAILED;
+                if (!retry_needed && !drain_raw_input_buffer(buffer)) {
+                    retry_needed = true;
+                }
 
                 // Leave WM_INPUT for the buffered API and dispatch control messages.
                 while (PeekMessageW(&message, nullptr, 0, WM_INPUT - 1, PM_REMOVE) || PeekMessageW(&message, nullptr, WM_INPUT + 1, 0xFFFF, PM_REMOVE)) {
@@ -199,6 +204,10 @@ namespace rawinput {
                         break;
                     }
                     DispatchMessageW(&message);
+                }
+
+                if (retry_needed && running) {
+                    Sleep(kMessageLoopRetryDelayMs);
                 }
             }
 

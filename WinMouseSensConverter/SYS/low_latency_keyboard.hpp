@@ -44,6 +44,7 @@ namespace rawinput {
 
         // Larger bursts are handled by repeatedly draining this fixed-size buffer.
         inline static constexpr size_t kRawInputBatchCapacity = 64;
+        inline static constexpr DWORD kMessageLoopRetryDelayMs = 1;
 
         LowLatencyKeyboard() = delete;
 
@@ -159,6 +160,8 @@ namespace rawinput {
                     current = NEXTRAWINPUTBLOCK(current);
                 }
             }
+
+            return false;
         }
 
         inline static void message_thread_proc(std::promise<bool> ready) noexcept {
@@ -223,8 +226,10 @@ namespace rawinput {
                     QS_ALLINPUT,
                     MWMO_INPUTAVAILABLE
                 );
-                if (wait_result == WAIT_FAILED) break;
-                if (!drain_raw_input_buffer(buffer)) break;
+                bool retry_needed = wait_result == WAIT_FAILED;
+                if (!retry_needed && !drain_raw_input_buffer(buffer)) {
+                    retry_needed = true;
+                }
 
                 // Dispatch control messages while deliberately leaving WM_INPUT to the buffer API.
                 while (PeekMessageW(&message, nullptr, 0, WM_INPUT - 1, PM_REMOVE) || PeekMessageW(&message, nullptr, WM_INPUT + 1, 0xFFFF, PM_REMOVE)) {
@@ -233,6 +238,10 @@ namespace rawinput {
                         break;
                     }
                     DispatchMessageW(&message);
+                }
+
+                if (retry_needed && running) {
+                    Sleep(kMessageLoopRetryDelayMs);
                 }
             }
 
