@@ -10,7 +10,8 @@ namespace ui::detail {
     HRESULT update_calibration_dpi_layout(UiState& state, const SharedDataSnapshot& shared_data, float width, float height, float primary_font_size, float suffix_font_size) noexcept {
         wchar_t text[128]{};
         const double counts = std::hypot(shared_data.accumulated_dx, shared_data.accumulated_dy);
-        const double dpi = calibration_dpi(shared_data.accumulated_dx, shared_data.accumulated_dy, state.calibration_distance_cm);
+        if (state.user_config == nullptr) return E_UNEXPECTED;
+        const double dpi = calibration_dpi_from_counts(counts, state.user_config->calibration_distance_cm);
         int written = 0;
         if (counts <= 0.0) {
             written = swprintf_s(text, L"\x2014 DPI");
@@ -31,10 +32,12 @@ namespace ui::detail {
 namespace ui::modes::calibration {
 
     void draw(detail::UiState& state, const detail::SharedDataSnapshot& shared_data) noexcept {
+        if (state.user_config == nullptr) return;
+        const config::UserConfig& user_config = *state.user_config;
         wchar_t calibration_distance_cell[192]{};
         wchar_t unit_cell[64]{};
-        if (detail::format_calibration_distance_cell(state.calibration_distance_cm, state.reference_dpi, state.unit, calibration_distance_cell, std::size(calibration_distance_cell)) <= 0) return;
-        if (detail::format_unit_cell(state.unit, unit_cell, std::size(unit_cell)) <= 0) return;
+        if (detail::format_calibration_distance_cell(user_config.calibration_distance_cm, user_config.reference_dpi, user_config.unit, calibration_distance_cell, std::size(calibration_distance_cell)) <= 0) return;
+        if (detail::format_unit_cell(user_config.unit, unit_cell, std::size(unit_cell)) <= 0) return;
         const std::array<const wchar_t*, 2> header_cells{calibration_distance_cell, unit_cell};
 
         detail::PageLayout page{};

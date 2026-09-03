@@ -33,9 +33,6 @@
     <ClInclude Include="Resource.hpp">
       <Filter>头文件</Filter>
     </ClInclude>
-    <ClInclude Include="WinMouseSensConverter.hpp">
-      <Filter>头文件</Filter>
-    </ClInclude>
     <ClInclude Include="ui.hpp">
       <Filter>头文件</Filter>
     </ClInclude>

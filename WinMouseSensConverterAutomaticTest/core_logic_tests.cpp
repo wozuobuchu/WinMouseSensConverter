@@ -27,11 +27,10 @@ namespace automatic_test {
             }
         });
 
-        runner.run("calibration uses the final two-dimensional vector", [&] {
-            TEST_EXPECT_NEAR(runner, ui::detail::calibration_dpi(3.0, 4.0, 10), 1.27, 1e-12);
-            TEST_EXPECT_NEAR(runner, ui::detail::calibration_dpi(-3.0, -4.0, 10), 1.27, 1e-12);
-            TEST_EXPECT_NEAR(runner, ui::detail::calibration_dpi(0.0, 0.0, 10), 0.0, 0.0);
-            TEST_EXPECT_NEAR(runner, ui::detail::calibration_dpi(300.0, 400.0, 50), 25.4, 1e-12);
+        runner.run("calibration converts an existing count magnitude", [&] {
+            TEST_EXPECT_NEAR(runner, ui::detail::calibration_dpi_from_counts(5.0, 10), 1.27, 1e-12);
+            TEST_EXPECT_NEAR(runner, ui::detail::calibration_dpi_from_counts(0.0, 10), 0.0, 0.0);
+            TEST_EXPECT_NEAR(runner, ui::detail::calibration_dpi_from_counts(500.0, 50), 25.4, 1e-12);
         });
 
         runner.run("recording key matching normalizes modifier sides", [&] {

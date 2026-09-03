@@ -50,8 +50,7 @@ namespace ui::detail {
         return raw_count;
     }
 
-    double calibration_dpi(double dx, double dy, int calibration_distance_cm) noexcept {
-        const double counts = std::hypot(dx, dy);
+    double calibration_dpi_from_counts(double counts, int calibration_distance_cm) noexcept {
         const double target_inches = static_cast<double>(calibration_distance_cm) / 2.54;
         return target_inches > 0.0 ? counts / target_inches : 0.0;
     }
@@ -280,37 +279,16 @@ namespace ui::detail {
         return true;
     }
 
-    HRESULT fitting_numeric_font_size(UiState& state, const wchar_t* const* texts, size_t text_count, float width, float height, float requested_font_size, float& fitted_font_size) noexcept {
-        if (texts == nullptr || text_count == 0) return E_INVALIDARG;
-        float fit_scale = 1.0f;
-        for (size_t index = 0; index < text_count; ++index) {
-            if (texts[index] == nullptr) return E_INVALIDARG;
-            const UINT32 length = static_cast<UINT32>(std::wcslen(texts[index]));
-            ComPtr<IDWriteTextLayout> layout;
-            HRESULT result = state.write_factory->CreateTextLayout(texts[index], length, state.value_format.Get(), std::max(1.0f, width), std::max(1.0f, height), layout.GetAddressOf());
-            if (FAILED(result)) return result;
-            result = layout->SetFontSize(requested_font_size, DWRITE_TEXT_RANGE{0, length});
-            if (FAILED(result)) return result;
-            DWRITE_TEXT_METRICS metrics{};
-            result = layout->GetMetrics(&metrics);
-            if (FAILED(result)) return result;
-            const float usable_width = std::max(1.0f, width - 4.0f);
-            const float usable_height = std::max(1.0f, height - 2.0f);
-            const float width_scale = metrics.widthIncludingTrailingWhitespace > usable_width ? usable_width / metrics.widthIncludingTrailingWhitespace : 1.0f;
-            const float height_scale = metrics.height > usable_height ? usable_height / metrics.height : 1.0f;
-            fit_scale = std::min(fit_scale, std::min(width_scale, height_scale));
-        }
-        fitted_font_size = requested_font_size * (fit_scale < 1.0f ? fit_scale * 0.96f : 1.0f);
-        return S_OK;
-    }
-
     HRESULT update_numeric_layout(UiState& state, TextLayoutCache& cache, const wchar_t* text, UINT32 suffix_start, float width, float height, float primary_font_size, float suffix_font_size) noexcept {
-        if (text == nullptr) return E_INVALIDARG;
+        if (text == nullptr || primary_font_size <= 0.0f || suffix_font_size < 0.0f) return E_INVALIDARG;
         const UINT32 text_length = static_cast<UINT32>(std::wcslen(text));
         const bool has_suffix = suffix_start < text_length;
-        if (cache.layout != nullptr && cache.display_text_length == text_length && std::wmemcmp(cache.display_text.data(), text, text_length) == 0 && cache.width == width && cache.height == height && cache.primary_font_size == primary_font_size && cache.suffix_font_size == suffix_font_size && cache.suffix_start == suffix_start) return S_OK;
+        if (cache.layout != nullptr && cache.display_text_length == text_length && std::wmemcmp(cache.display_text.data(), text, text_length) == 0 && cache.width == width && cache.height == height && cache.requested_primary_font_size == primary_font_size && cache.requested_suffix_font_size == suffix_font_size && cache.suffix_start == suffix_start) return S_OK;
 
         ComPtr<IDWriteTextLayout> text_layout;
+#ifdef WINMOUSESENSCONVERTER_AUTOMATIC_TEST
+        ++state.numeric_layout_creation_count;
+#endif
         HRESULT result = state.write_factory->CreateTextLayout(text, text_length, state.value_format.Get(), std::max(1.0f, width), std::max(1.0f, height), text_layout.GetAddressOf());
         if (FAILED(result)) return result;
 
@@ -330,12 +308,12 @@ namespace ui::detail {
         const float width_scale = metrics.widthIncludingTrailingWhitespace > usable_width ? usable_width / metrics.widthIncludingTrailingWhitespace : 1.0f;
         const float height_scale = metrics.height > usable_height ? usable_height / metrics.height : 1.0f;
         const float fit_scale = std::min(width_scale, height_scale);
-        if (fit_scale < 1.0f) {
-            const float adjusted_scale = fit_scale * 0.96f;
-            result = text_layout->SetFontSize(primary_font_size * adjusted_scale, full_range);
+        const float content_fit_scale = fit_scale < 1.0f ? fit_scale * 0.96f : 1.0f;
+        if (content_fit_scale < 1.0f) {
+            result = text_layout->SetFontSize(primary_font_size * content_fit_scale, full_range);
             if (FAILED(result)) return result;
             if (has_suffix) {
-                result = text_layout->SetFontSize(suffix_font_size * adjusted_scale, DWRITE_TEXT_RANGE{suffix_start, text_length - suffix_start});
+                result = text_layout->SetFontSize(suffix_font_size * content_fit_scale, DWRITE_TEXT_RANGE{suffix_start, text_length - suffix_start});
                 if (FAILED(result)) return result;
             }
         }
@@ -345,9 +323,47 @@ namespace ui::detail {
         cache.display_text_length = text_length;
         cache.width = width;
         cache.height = height;
-        cache.primary_font_size = primary_font_size;
-        cache.suffix_font_size = suffix_font_size;
+        cache.requested_primary_font_size = primary_font_size;
+        cache.requested_suffix_font_size = suffix_font_size;
+        cache.content_fit_scale = content_fit_scale;
+        cache.applied_fit_scale = content_fit_scale;
         cache.suffix_start = suffix_start;
+        return S_OK;
+    }
+
+    static HRESULT apply_numeric_layout_fit_scale(TextLayoutCache& cache, float fit_scale) noexcept {
+        if (cache.layout == nullptr || fit_scale <= 0.0f) return E_INVALIDARG;
+        if (cache.applied_fit_scale == fit_scale) return S_OK;
+
+        const DWRITE_TEXT_RANGE full_range{0, cache.display_text_length};
+        HRESULT result = cache.layout->SetFontSize(cache.requested_primary_font_size * fit_scale, full_range);
+        if (FAILED(result)) return result;
+        if (cache.suffix_start < cache.display_text_length) {
+            result = cache.layout->SetFontSize(
+                cache.requested_suffix_font_size * fit_scale,
+                DWRITE_TEXT_RANGE{cache.suffix_start, cache.display_text_length - cache.suffix_start});
+            if (FAILED(result)) return result;
+        }
+        cache.applied_fit_scale = fit_scale;
+        return S_OK;
+    }
+
+    HRESULT update_measurement_value_layouts(UiState& state, const std::array<const wchar_t*, 2>& texts, float width, float height, float primary_font_size) noexcept {
+        constexpr UINT32 no_suffix = std::numeric_limits<UINT32>::max();
+        std::array<TextLayoutCache, 2> updated_layouts = state.measurement_value_layouts;
+        for (size_t index = 0; index < texts.size(); ++index) {
+            const HRESULT result = update_numeric_layout(state, updated_layouts[index], texts[index], no_suffix, width, height, primary_font_size);
+            if (FAILED(result)) return result;
+        }
+
+        const float shared_fit_scale = std::min(
+            updated_layouts[0].content_fit_scale,
+            updated_layouts[1].content_fit_scale);
+        for (TextLayoutCache& cache : updated_layouts) {
+            const HRESULT result = apply_numeric_layout_fit_scale(cache, shared_fit_scale);
+            if (FAILED(result)) return result;
+        }
+        state.measurement_value_layouts = std::move(updated_layouts);
         return S_OK;
     }
 

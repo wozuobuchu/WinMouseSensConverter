@@ -29,8 +29,10 @@ namespace ui::detail {
         UINT32 display_text_length = 0;
         float width = 0.0f;
         float height = 0.0f;
-        float primary_font_size = 0.0f;
-        float suffix_font_size = 0.0f;
+        float requested_primary_font_size = 0.0f;
+        float requested_suffix_font_size = 0.0f;
+        float content_fit_scale = 1.0f;
+        float applied_fit_scale = 1.0f;
         UINT32 suffix_start = std::numeric_limits<UINT32>::max();
     };
 
@@ -60,12 +62,12 @@ namespace ui::detail {
         UINT32 recording_key_name_length = 2;
         float shortcut_badge_width = 48.0f;
         UINT recording_key_command = 0;
-
-        int reference_dpi = 800;
         UINT reference_dpi_command = 0;
-        Unit unit = Unit::cm;
-        int calibration_distance_cm = 10;
         UINT calibration_distance_command = 0;
+
+#ifdef WINMOUSESENSCONVERTER_AUTOMATIC_TEST
+        size_t numeric_layout_creation_count = 0;
+#endif
 
         ComPtr<ID2D1Factory> d2d_factory;
         ComPtr<IDWriteFactory> write_factory;
@@ -125,7 +127,7 @@ namespace ui::detail {
 
     const wchar_t* unit_name(Unit unit) noexcept;
     double convert_distance(double raw_count, int reference_dpi, Unit unit) noexcept;
-    double calibration_dpi(double dx, double dy, int calibration_distance_cm) noexcept;
+    double calibration_dpi_from_counts(double counts, int calibration_distance_cm) noexcept;
     SharedDataSnapshot capture_shared_data() noexcept;
     PageLayout calculate_page_layout(float width, float height, float shortcut_badge_width, const std::array<float, 2>& header_cell_text_widths) noexcept;
     std::array<D2D1_RECT_F, 2> calculate_measurement_card_bounds(const PageLayout& layout) noexcept;
@@ -138,8 +140,8 @@ namespace ui::detail {
     void draw_card(UiState& state, const D2D1_RECT_F& bounds, float radius) noexcept;
     bool begin_page(UiState& state, const SharedDataSnapshot& shared_data, const wchar_t* mode_name, const std::array<const wchar_t*, 2>& header_cells, PageLayout& layout) noexcept;
     HRESULT update_header_cell_layout(UiState& state, HeaderCellLayoutCache& cache, const wchar_t* text, float font_size) noexcept;
-    HRESULT fitting_numeric_font_size(UiState& state, const wchar_t* const* texts, size_t text_count, float width, float height, float requested_font_size, float& fitted_font_size) noexcept;
     HRESULT update_numeric_layout(UiState& state, TextLayoutCache& cache, const wchar_t* text, UINT32 suffix_start, float width, float height, float primary_font_size, float suffix_font_size = 0.0f) noexcept;
+    HRESULT update_measurement_value_layouts(UiState& state, const std::array<const wchar_t*, 2>& texts, float width, float height, float primary_font_size) noexcept;
     HRESULT update_calibration_dpi_layout(UiState& state, const SharedDataSnapshot& shared_data, float width, float height, float primary_font_size, float suffix_font_size) noexcept;
 
 } // namespace ui::detail

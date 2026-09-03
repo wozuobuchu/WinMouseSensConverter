@@ -2,13 +2,8 @@
 #define SYNC_HPP_
 
 #include <cstdint>
-#include <stop_token>
 
 #include "config.hpp"
-
-namespace sync {
-    inline std::stop_source sts_;
-}
 
 namespace public_data {
     inline uint8_t on_recording_ = 0;

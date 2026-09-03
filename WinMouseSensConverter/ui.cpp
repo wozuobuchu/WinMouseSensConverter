@@ -199,69 +199,6 @@ namespace {
         return MulDiv(value, static_cast<int>(dpi), USER_DEFAULT_SCREEN_DPI);
     }
 
-    constexpr std::optional<int> parse_reference_dpi(std::wstring_view text) noexcept {
-        if (text.empty() || text.size() > 6) return std::nullopt;
-
-        int value = 0;
-        for (const wchar_t character : text) {
-            if (character < L'0' || character > L'9') return std::nullopt;
-            value = value * 10 + static_cast<int>(character - L'0');
-        }
-
-        if (value < 1 || value > 999999) return std::nullopt;
-        return value;
-    }
-
-    constexpr bool parses_reference_dpi_as(std::wstring_view text, int expected) noexcept {
-        const std::optional<int> parsed = parse_reference_dpi(text);
-        return parsed.has_value() && *parsed == expected;
-    }
-
-    constexpr std::optional<int> parse_calibration_distance_cm(std::wstring_view text) noexcept {
-        if (text.empty() || text.size() > 4) return std::nullopt;
-
-        int value = 0;
-        for (const wchar_t character : text) {
-            if (character < L'0' || character > L'9') return std::nullopt;
-            value = value * 10 + static_cast<int>(character - L'0');
-        }
-
-        if (value < 10 || value > 1000) return std::nullopt;
-        return value;
-    }
-
-    constexpr std::optional<uint16_t> parse_recording_key(std::wstring_view text) noexcept {
-        if (text.empty() || text.size() > 4) return std::nullopt;
-
-        unsigned int base = 10;
-        if (text.starts_with(L"0x") || text.starts_with(L"0X")) {
-            base = 16;
-            text.remove_prefix(2);
-        }
-        if (text.empty()) return std::nullopt;
-
-        unsigned int value = 0;
-        for (const wchar_t character : text) {
-            unsigned int digit = 0;
-            if (character >= L'0' && character <= L'9') {
-                digit = static_cast<unsigned int>(character - L'0');
-            } else if (base == 16 && character >= L'a' && character <= L'f') {
-                digit = static_cast<unsigned int>(character - L'a') + 10;
-            } else if (base == 16 && character >= L'A' && character <= L'F') {
-                digit = static_cast<unsigned int>(character - L'A') + 10;
-            } else {
-                return std::nullopt;
-            }
-
-            if (digit >= base) return std::nullopt;
-            value = value * base + digit;
-            if (value > 254) return std::nullopt;
-        }
-
-        if (value == 0) return std::nullopt;
-        return static_cast<uint16_t>(value);
-    }
-
     HRESULT create_text_format(IDWriteFactory* factory, float font_size, DWRITE_FONT_WEIGHT weight, DWRITE_TEXT_ALIGNMENT alignment, DWRITE_PARAGRAPH_ALIGNMENT paragraph_alignment, IDWriteTextFormat** format) noexcept {
         HRESULT result = factory->CreateTextFormat(
             L"Segoe UI",
@@ -530,12 +467,13 @@ namespace {
     }
 
     void update_menu_selection(UiState& state) noexcept {
+        if (state.user_config == nullptr) return;
         const HMENU root_menu = GetMenu(state.hwnd);
         if (root_menu == nullptr) return;
 
         UINT unit_command = kCommandUnitCm;
         for (const UnitMenuEntry& entry : kUnitMenuEntries) {
-            if (entry.unit == state.unit) {
+            if (entry.unit == state.user_config->unit) {
                 unit_command = entry.command;
                 break;
             }
@@ -670,71 +608,127 @@ namespace {
         return help_dialog_proc(dialog, message, wparam, lparam, HelpDialogKind::instruction);
     }
 
-    INT_PTR CALLBACK custom_dpi_dialog_proc(HWND dialog, UINT message, WPARAM wparam, LPARAM lparam) noexcept {
+    enum class CustomInputKind : uint8_t {
+        reference_dpi,
+        calibration_distance,
+        recording_key,
+    };
+
+    struct CustomInputSpec {
+        int edit_control_id;
+        WPARAM text_limit;
+        HWND UiState::*dialog_slot;
+    };
+
+    constexpr CustomInputSpec custom_input_spec(CustomInputKind kind) noexcept {
+        switch (kind) {
+            case CustomInputKind::reference_dpi:
+                return {IDC_CUSTOM_DPI_VALUE, 7, &UiState::custom_dpi_dialog};
+            case CustomInputKind::calibration_distance:
+                return {IDC_CUSTOM_CALIBRATION_DISTANCE_VALUE, 4, &UiState::custom_calibration_distance_dialog};
+            case CustomInputKind::recording_key:
+                return {IDC_CUSTOM_RECORDING_KEY_VALUE, 4, &UiState::custom_recording_key_dialog};
+        }
+        return {IDC_CUSTOM_DPI_VALUE, 7, &UiState::custom_dpi_dialog};
+    }
+
+    UINT custom_input_initial_value(const UiState& state, CustomInputKind kind) noexcept {
+        if (state.user_config == nullptr) return 0;
+        switch (kind) {
+            case CustomInputKind::reference_dpi:
+                return static_cast<UINT>(state.user_config->reference_dpi);
+            case CustomInputKind::calibration_distance:
+                return static_cast<UINT>(state.user_config->calibration_distance_cm);
+            case CustomInputKind::recording_key:
+                return static_cast<UINT>(state.user_config->recording_key);
+        }
+        return 0;
+    }
+
+    bool submit_custom_input(UiState& state, CustomInputKind kind, std::wstring_view text) noexcept {
+        if (state.user_config == nullptr) return false;
+
+        bool changed = false;
+        switch (kind) {
+            case CustomInputKind::reference_dpi: {
+                const std::optional<int> parsed = config::detail::parse_reference_dpi(text);
+                if (!parsed.has_value()) return false;
+                changed = state.user_config->reference_dpi != *parsed || state.reference_dpi_command != kCommandDpiCustom;
+                state.user_config->reference_dpi = *parsed;
+                state.reference_dpi_command = kCommandDpiCustom;
+                break;
+            }
+            case CustomInputKind::calibration_distance: {
+                const std::optional<int> parsed = config::detail::parse_calibration_distance_cm(text);
+                if (!parsed.has_value()) return false;
+                changed = state.user_config->calibration_distance_cm != *parsed || state.calibration_distance_command != kCommandCalibrationDistanceCustom;
+                state.user_config->calibration_distance_cm = *parsed;
+                state.calibration_distance_command = kCommandCalibrationDistanceCustom;
+                break;
+            }
+            case CustomInputKind::recording_key: {
+                const std::optional<uint16_t> parsed = config::detail::parse_recording_key(text);
+                if (!parsed.has_value()) return false;
+                changed = state.user_config->recording_key != *parsed || state.recording_key_command != kCommandRecordingKeyCustom;
+                state.user_config->recording_key = *parsed;
+                state.recording_key_command = kCommandRecordingKeyCustom;
+                initialize_recording_key_display(state, *parsed);
+                break;
+            }
+        }
+
+        update_menu_selection(state);
+        if (changed) state.redraw_dirty = true;
+        return true;
+    }
+
+    void focus_and_select_dialog_edit(HWND dialog, int edit_control_id) noexcept {
+        const HWND edit = GetDlgItem(dialog, edit_control_id);
+        if (edit == nullptr) return;
+        SetFocus(edit);
+        SendMessageW(edit, EM_SETSEL, 0, -1);
+    }
+
+    INT_PTR custom_input_dialog_proc(HWND dialog, UINT message, WPARAM wparam, LPARAM lparam, CustomInputKind kind) noexcept {
         UiState* state = reinterpret_cast<UiState*>(GetWindowLongPtrW(dialog, DWLP_USER));
+        const CustomInputSpec spec = custom_input_spec(kind);
 
         switch (message) {
             case WM_INITDIALOG: {
                 state = reinterpret_cast<UiState*>(lparam);
-                if (state == nullptr) {
+                if (state == nullptr || state->user_config == nullptr) {
                     DestroyWindow(dialog);
                     return TRUE;
                 }
                 SetWindowLongPtrW(dialog, DWLP_USER, reinterpret_cast<LONG_PTR>(state));
 
                 const HINSTANCE instance = reinterpret_cast<HINSTANCE>(GetWindowLongPtrW(dialog, GWLP_HINSTANCE));
-                const HICON large_icon = LoadIconW(instance, MAKEINTRESOURCEW(IDI_WINMOUSESENSCONVERTER));
-                const HICON small_icon = LoadIconW(instance, MAKEINTRESOURCEW(IDI_SMALL));
-                SendMessageW(dialog, WM_SETICON, ICON_BIG, reinterpret_cast<LPARAM>(large_icon));
-                SendMessageW(dialog, WM_SETICON, ICON_SMALL, reinterpret_cast<LPARAM>(small_icon));
-
+                SendMessageW(dialog, WM_SETICON, ICON_BIG, reinterpret_cast<LPARAM>(LoadIconW(instance, MAKEINTRESOURCEW(IDI_WINMOUSESENSCONVERTER))));
+                SendMessageW(dialog, WM_SETICON, ICON_SMALL, reinterpret_cast<LPARAM>(LoadIconW(instance, MAKEINTRESOURCEW(IDI_SMALL))));
                 apply_native_dialog_theme(dialog);
-                SetDlgItemInt(dialog, IDC_CUSTOM_DPI_VALUE, static_cast<UINT>(state->reference_dpi), FALSE);
-                SendDlgItemMessageW(dialog, IDC_CUSTOM_DPI_VALUE, EM_SETLIMITTEXT, 7, 0);
+                SetDlgItemInt(dialog, spec.edit_control_id, custom_input_initial_value(*state, kind), FALSE);
+                SendDlgItemMessageW(dialog, spec.edit_control_id, EM_SETLIMITTEXT, spec.text_limit, 0);
                 center_dialog_on_owner(dialog, state->hwnd);
 
-                const HWND edit = GetDlgItem(dialog, IDC_CUSTOM_DPI_VALUE);
-                if (edit != nullptr) {
-                    SetFocus(edit);
-                    SendMessageW(edit, EM_SETSEL, 0, -1);
-                    return FALSE;
-                }
-                return TRUE;
+                focus_and_select_dialog_edit(dialog, spec.edit_control_id);
+                return GetDlgItem(dialog, spec.edit_control_id) == nullptr ? TRUE : FALSE;
             }
 
             case WM_COMMAND:
-                switch (LOWORD(wparam)) {
-                    case IDOK: {
-                        if (state == nullptr) return TRUE;
-
-                        wchar_t text[8]{};
-                        const UINT length = GetDlgItemTextW(dialog, IDC_CUSTOM_DPI_VALUE, text, static_cast<int>(std::size(text)));
-                        const std::optional<int> parsed = parse_reference_dpi(std::wstring_view(text, length));
-                        if (!parsed.has_value()) {
-                            const HWND edit = GetDlgItem(dialog, IDC_CUSTOM_DPI_VALUE);
-                            if (edit != nullptr) {
-                                SetFocus(edit);
-                                SendMessageW(edit, EM_SETSEL, 0, -1);
-                            }
-                            return TRUE;
-                        }
-
-                        const bool changed = state->reference_dpi != *parsed || state->reference_dpi_command != kCommandDpiCustom;
-                        state->reference_dpi = *parsed;
-                        state->reference_dpi_command = kCommandDpiCustom;
-                        state->user_config->reference_dpi = *parsed;
-                        update_menu_selection(*state);
-                        if (changed) state->redraw_dirty = true;
-                        DestroyWindow(dialog);
+                if (LOWORD(wparam) == IDOK) {
+                    if (state == nullptr) return TRUE;
+                    wchar_t text[8]{};
+                    const UINT length = GetDlgItemTextW(dialog, spec.edit_control_id, text, static_cast<int>(std::size(text)));
+                    if (!submit_custom_input(*state, kind, std::wstring_view(text, length))) {
+                        focus_and_select_dialog_edit(dialog, spec.edit_control_id);
                         return TRUE;
                     }
-
-                    case IDCANCEL:
-                        DestroyWindow(dialog);
-                        return TRUE;
-
-                    default:
-                        break;
+                    DestroyWindow(dialog);
+                    return TRUE;
+                }
+                if (LOWORD(wparam) == IDCANCEL) {
+                    DestroyWindow(dialog);
+                    return TRUE;
                 }
                 break;
 
@@ -744,7 +738,10 @@ namespace {
 
             case WM_NCDESTROY:
                 SetWindowLongPtrW(dialog, DWLP_USER, 0);
-                if (state != nullptr && state->custom_dpi_dialog == dialog) state->custom_dpi_dialog = nullptr;
+                if (state != nullptr) {
+                    HWND& slot = state->*(spec.dialog_slot);
+                    if (slot == dialog) slot = nullptr;
+                }
                 break;
 
             default:
@@ -752,168 +749,18 @@ namespace {
         }
 
         return FALSE;
+    }
+
+    INT_PTR CALLBACK custom_dpi_dialog_proc(HWND dialog, UINT message, WPARAM wparam, LPARAM lparam) noexcept {
+        return custom_input_dialog_proc(dialog, message, wparam, lparam, CustomInputKind::reference_dpi);
     }
 
     INT_PTR CALLBACK custom_calibration_distance_dialog_proc(HWND dialog, UINT message, WPARAM wparam, LPARAM lparam) noexcept {
-        UiState* state = reinterpret_cast<UiState*>(GetWindowLongPtrW(dialog, DWLP_USER));
-
-        switch (message) {
-            case WM_INITDIALOG: {
-                state = reinterpret_cast<UiState*>(lparam);
-                if (state == nullptr) {
-                    DestroyWindow(dialog);
-                    return TRUE;
-                }
-                SetWindowLongPtrW(dialog, DWLP_USER, reinterpret_cast<LONG_PTR>(state));
-
-                const HINSTANCE instance = reinterpret_cast<HINSTANCE>(GetWindowLongPtrW(dialog, GWLP_HINSTANCE));
-                SendMessageW(dialog, WM_SETICON, ICON_BIG, reinterpret_cast<LPARAM>(LoadIconW(instance, MAKEINTRESOURCEW(IDI_WINMOUSESENSCONVERTER))));
-                SendMessageW(dialog, WM_SETICON, ICON_SMALL, reinterpret_cast<LPARAM>(LoadIconW(instance, MAKEINTRESOURCEW(IDI_SMALL))));
-                apply_native_dialog_theme(dialog);
-                SetDlgItemInt(dialog, IDC_CUSTOM_CALIBRATION_DISTANCE_VALUE, static_cast<UINT>(state->calibration_distance_cm), FALSE);
-                SendDlgItemMessageW(dialog, IDC_CUSTOM_CALIBRATION_DISTANCE_VALUE, EM_SETLIMITTEXT, 4, 0);
-                center_dialog_on_owner(dialog, state->hwnd);
-
-                const HWND edit = GetDlgItem(dialog, IDC_CUSTOM_CALIBRATION_DISTANCE_VALUE);
-                if (edit != nullptr) {
-                    SetFocus(edit);
-                    SendMessageW(edit, EM_SETSEL, 0, -1);
-                    return FALSE;
-                }
-                return TRUE;
-            }
-
-            case WM_COMMAND:
-                switch (LOWORD(wparam)) {
-                    case IDOK: {
-                        if (state == nullptr) return TRUE;
-
-                        wchar_t text[5]{};
-                        const UINT length = GetDlgItemTextW(dialog, IDC_CUSTOM_CALIBRATION_DISTANCE_VALUE, text, static_cast<int>(std::size(text)));
-                        const std::optional<int> parsed = parse_calibration_distance_cm(std::wstring_view(text, length));
-                        if (!parsed.has_value()) {
-                            const HWND edit = GetDlgItem(dialog, IDC_CUSTOM_CALIBRATION_DISTANCE_VALUE);
-                            if (edit != nullptr) {
-                                SetFocus(edit);
-                                SendMessageW(edit, EM_SETSEL, 0, -1);
-                            }
-                            return TRUE;
-                        }
-
-                        const bool changed = state->calibration_distance_cm != *parsed || state->calibration_distance_command != kCommandCalibrationDistanceCustom;
-                        state->calibration_distance_cm = *parsed;
-                        state->calibration_distance_command = kCommandCalibrationDistanceCustom;
-                        state->user_config->calibration_distance_cm = *parsed;
-                        update_menu_selection(*state);
-                        if (changed) state->redraw_dirty = true;
-                        DestroyWindow(dialog);
-                        return TRUE;
-                    }
-
-                    case IDCANCEL:
-                        DestroyWindow(dialog);
-                        return TRUE;
-
-                    default:
-                        break;
-                }
-                break;
-
-            case WM_CLOSE:
-                DestroyWindow(dialog);
-                return TRUE;
-
-            case WM_NCDESTROY:
-                SetWindowLongPtrW(dialog, DWLP_USER, 0);
-                if (state != nullptr && state->custom_calibration_distance_dialog == dialog) state->custom_calibration_distance_dialog = nullptr;
-                break;
-
-            default:
-                break;
-        }
-
-        return FALSE;
+        return custom_input_dialog_proc(dialog, message, wparam, lparam, CustomInputKind::calibration_distance);
     }
 
     INT_PTR CALLBACK custom_recording_key_dialog_proc(HWND dialog, UINT message, WPARAM wparam, LPARAM lparam) noexcept {
-        UiState* state = reinterpret_cast<UiState*>(GetWindowLongPtrW(dialog, DWLP_USER));
-
-        switch (message) {
-            case WM_INITDIALOG: {
-                state = reinterpret_cast<UiState*>(lparam);
-                if (state == nullptr) {
-                    DestroyWindow(dialog);
-                    return TRUE;
-                }
-                SetWindowLongPtrW(dialog, DWLP_USER, reinterpret_cast<LONG_PTR>(state));
-
-                const HINSTANCE instance = reinterpret_cast<HINSTANCE>(GetWindowLongPtrW(dialog, GWLP_HINSTANCE));
-                SendMessageW(dialog, WM_SETICON, ICON_BIG, reinterpret_cast<LPARAM>(LoadIconW(instance, MAKEINTRESOURCEW(IDI_WINMOUSESENSCONVERTER))));
-                SendMessageW(dialog, WM_SETICON, ICON_SMALL, reinterpret_cast<LPARAM>(LoadIconW(instance, MAKEINTRESOURCEW(IDI_SMALL))));
-                apply_native_dialog_theme(dialog);
-                SetDlgItemInt(dialog, IDC_CUSTOM_RECORDING_KEY_VALUE, static_cast<UINT>(state->user_config->recording_key), FALSE);
-                SendDlgItemMessageW(dialog, IDC_CUSTOM_RECORDING_KEY_VALUE, EM_SETLIMITTEXT, 4, 0);
-                center_dialog_on_owner(dialog, state->hwnd);
-
-                const HWND edit = GetDlgItem(dialog, IDC_CUSTOM_RECORDING_KEY_VALUE);
-                if (edit != nullptr) {
-                    SetFocus(edit);
-                    SendMessageW(edit, EM_SETSEL, 0, -1);
-                    return FALSE;
-                }
-                return TRUE;
-            }
-
-            case WM_COMMAND:
-                switch (LOWORD(wparam)) {
-                    case IDOK: {
-                        if (state == nullptr) return TRUE;
-
-                        wchar_t text[5]{};
-                        const UINT length = GetDlgItemTextW(dialog, IDC_CUSTOM_RECORDING_KEY_VALUE, text, static_cast<int>(std::size(text)));
-                        const std::optional<uint16_t> parsed = parse_recording_key(std::wstring_view(text, length));
-                        if (!parsed.has_value()) {
-                            const HWND edit = GetDlgItem(dialog, IDC_CUSTOM_RECORDING_KEY_VALUE);
-                            if (edit != nullptr) {
-                                SetFocus(edit);
-                                SendMessageW(edit, EM_SETSEL, 0, -1);
-                            }
-                            return TRUE;
-                        }
-
-                        const bool changed = state->user_config->recording_key != *parsed || state->recording_key_command != kCommandRecordingKeyCustom;
-                        state->user_config->recording_key = *parsed;
-                        state->recording_key_command = kCommandRecordingKeyCustom;
-                        initialize_recording_key_display(*state, *parsed);
-                        update_menu_selection(*state);
-                        if (changed) state->redraw_dirty = true;
-                        DestroyWindow(dialog);
-                        return TRUE;
-                    }
-
-                    case IDCANCEL:
-                        DestroyWindow(dialog);
-                        return TRUE;
-
-                    default:
-                        break;
-                }
-                break;
-
-            case WM_CLOSE:
-                DestroyWindow(dialog);
-                return TRUE;
-
-            case WM_NCDESTROY:
-                SetWindowLongPtrW(dialog, DWLP_USER, 0);
-                if (state != nullptr && state->custom_recording_key_dialog == dialog) state->custom_recording_key_dialog = nullptr;
-                break;
-
-            default:
-                break;
-        }
-
-        return FALSE;
+        return custom_input_dialog_proc(dialog, message, wparam, lparam, CustomInputKind::recording_key);
     }
 
     void show_modeless_dialog(UiState& state, int resource_id, HWND& slot, DLGPROC procedure) noexcept {
@@ -979,8 +826,7 @@ namespace {
 
         for (const DpiMenuEntry& entry : kDpiMenuEntries) {
             if (entry.command == command) {
-                if (state.reference_dpi != entry.dpi || state.reference_dpi_command != entry.command) {
-                    state.reference_dpi = entry.dpi;
+                if (state.user_config->reference_dpi != entry.dpi || state.reference_dpi_command != entry.command) {
                     state.reference_dpi_command = entry.command;
                     state.user_config->reference_dpi = entry.dpi;
                     update_menu_selection(state);
@@ -992,8 +838,7 @@ namespace {
 
         for (const UnitMenuEntry& entry : kUnitMenuEntries) {
             if (entry.command == command) {
-                if (state.unit != entry.unit) {
-                    state.unit = entry.unit;
+                if (state.user_config->unit != entry.unit) {
                     state.user_config->unit = entry.unit;
                     update_menu_selection(state);
                     state.redraw_dirty = true;
@@ -1004,8 +849,7 @@ namespace {
 
         for (const CalibrationDistanceMenuEntry& entry : kCalibrationDistanceMenuEntries) {
             if (entry.command == command) {
-                if (state.calibration_distance_cm != entry.distance_cm || state.calibration_distance_command != entry.command) {
-                    state.calibration_distance_cm = entry.distance_cm;
+                if (state.user_config->calibration_distance_cm != entry.distance_cm || state.calibration_distance_command != entry.command) {
                     state.calibration_distance_command = entry.command;
                     state.user_config->calibration_distance_cm = entry.distance_cm;
                     update_menu_selection(state);
@@ -1150,7 +994,6 @@ namespace {
             case WM_DESTROY:
                 if (state != nullptr) close_modeless_dialogs(*state);
                 KillTimer(hwnd, kUiTimer);
-                sync::sts_.request_stop();
                 PostQuitMessage(0);
                 return 0;
 
@@ -1212,10 +1055,7 @@ namespace ui {
 
             state = std::make_unique<UiState>();
             state->user_config = &user_config;
-            state->reference_dpi = user_config.reference_dpi;
             state->reference_dpi_command = dpi_command_for_value(user_config.reference_dpi);
-            state->unit = user_config.unit;
-            state->calibration_distance_cm = user_config.calibration_distance_cm;
             state->calibration_distance_command = calibration_distance_command_for_value(user_config.calibration_distance_cm);
             state->recording_key_command = recording_key_command_for_value(user_config.recording_key);
             if (FAILED(initialize_device_independent_resources(*state))) {

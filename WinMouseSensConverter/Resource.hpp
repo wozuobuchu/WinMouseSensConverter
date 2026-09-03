@@ -2,16 +2,9 @@
 // Microsoft Visual C++ 生成的包含文件。
 // 供 WinMouseSensConverter.rc 使用
 //
-#define IDC_MYICON                      2
-#define IDD_WINMOUSESENSCONVERTER_DIALOG 102
-#define IDS_APP_TITLE                   103
 #define IDD_ABOUTBOX                    103
-#define IDM_ABOUT                       104
-#define IDM_EXIT                        105
 #define IDI_WINMOUSESENSCONVERTER       107
 #define IDI_SMALL                       108
-#define IDC_WINMOUSESENSCONVERTER       109
-#define IDR_MAINFRAME                   128
 #define IDD_INSTRUCTION                 129
 #define IDD_CUSTOM_DPI                  130
 #define IDD_CUSTOM_CALIBRATION_DISTANCE 131

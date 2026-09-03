@@ -41,8 +41,15 @@ namespace automatic_test {
             TEST_EXPECT(runner, config::detail::parse_recording_key("0XfE") == 254);
             TEST_EXPECT(runner, !config::detail::parse_recording_key("0").has_value());
             TEST_EXPECT(runner, !config::detail::parse_recording_key("255").has_value());
+            TEST_EXPECT(runner, !config::detail::parse_recording_key("99999999999999999999").has_value());
             TEST_EXPECT(runner, !config::detail::parse_recording_key("0x").has_value());
             TEST_EXPECT(runner, !config::detail::parse_recording_key("0xGG").has_value());
+
+            TEST_EXPECT(runner, config::detail::parse_reference_dpi(L"999999") == config::detail::parse_reference_dpi("999999"));
+            TEST_EXPECT(runner, config::detail::parse_calibration_distance_cm(L"1000") == config::detail::parse_calibration_distance_cm("1000"));
+            TEST_EXPECT(runner, config::detail::parse_recording_key(L"0XfE") == config::detail::parse_recording_key("0XfE"));
+            TEST_EXPECT(runner, config::detail::parse_recording_key(L"0xGG") == config::detail::parse_recording_key("0xGG"));
+            TEST_EXPECT(runner, config::detail::parse_reference_dpi(L"+800") == config::detail::parse_reference_dpi("+800"));
         });
 
         runner.run("config enum parsers cover every supported value", [&] {

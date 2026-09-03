@@ -57,17 +57,43 @@ namespace config {
             return text;
         }
 
-        constexpr std::optional<int> parse_reference_dpi(std::string_view text) noexcept {
-            if (text.empty() || text.size() > 6) return std::nullopt;
+        template <typename Character>
+        constexpr std::optional<unsigned int> parse_unsigned_integer(std::basic_string_view<Character> text, unsigned int base, unsigned int maximum) noexcept {
+            if (text.empty() || (base != 10 && base != 16)) return std::nullopt;
 
-            int value = 0;
-            for (const char character : text) {
-                if (character < '0' || character > '9') return std::nullopt;
-                value = value * 10 + static_cast<int>(character - '0');
+            unsigned int value = 0;
+            for (const Character character : text) {
+                unsigned int digit = 0;
+                if (character >= static_cast<Character>('0') && character <= static_cast<Character>('9')) {
+                    digit = static_cast<unsigned int>(character - static_cast<Character>('0'));
+                } else if (base == 16 && character >= static_cast<Character>('a') && character <= static_cast<Character>('f')) {
+                    digit = static_cast<unsigned int>(character - static_cast<Character>('a')) + 10;
+                } else if (base == 16 && character >= static_cast<Character>('A') && character <= static_cast<Character>('F')) {
+                    digit = static_cast<unsigned int>(character - static_cast<Character>('A')) + 10;
+                } else {
+                    return std::nullopt;
+                }
+
+                if (digit >= base || digit > maximum || value > (maximum - digit) / base) return std::nullopt;
+                value = value * base + digit;
             }
-
-            if (value < 1 || value > 999999) return std::nullopt;
             return value;
+        }
+
+        template <typename Character>
+        constexpr std::optional<int> parse_reference_dpi_impl(std::basic_string_view<Character> text) noexcept {
+            if (text.empty() || text.size() > 6) return std::nullopt;
+            const std::optional<unsigned int> value = parse_unsigned_integer(text, 10, 999999);
+            if (!value.has_value() || *value < 1) return std::nullopt;
+            return static_cast<int>(*value);
+        }
+
+        constexpr std::optional<int> parse_reference_dpi(std::string_view text) noexcept {
+            return parse_reference_dpi_impl(text);
+        }
+
+        constexpr std::optional<int> parse_reference_dpi(std::wstring_view text) noexcept {
+            return parse_reference_dpi_impl(text);
         }
 
         constexpr std::optional<OutputUnit> parse_unit(std::string_view text) noexcept {
@@ -80,17 +106,20 @@ namespace config {
             return std::nullopt;
         }
 
-        constexpr std::optional<int> parse_calibration_distance_cm(std::string_view text) noexcept {
+        template <typename Character>
+        constexpr std::optional<int> parse_calibration_distance_cm_impl(std::basic_string_view<Character> text) noexcept {
             if (text.empty() || text.size() > 4) return std::nullopt;
+            const std::optional<unsigned int> value = parse_unsigned_integer(text, 10, 1000);
+            if (!value.has_value() || *value < 10) return std::nullopt;
+            return static_cast<int>(*value);
+        }
 
-            int value = 0;
-            for (const char character : text) {
-                if (character < '0' || character > '9') return std::nullopt;
-                value = value * 10 + static_cast<int>(character - '0');
-            }
+        constexpr std::optional<int> parse_calibration_distance_cm(std::string_view text) noexcept {
+            return parse_calibration_distance_cm_impl(text);
+        }
 
-            if (value < 10 || value > 1000) return std::nullopt;
-            return value;
+        constexpr std::optional<int> parse_calibration_distance_cm(std::wstring_view text) noexcept {
+            return parse_calibration_distance_cm_impl(text);
         }
 
         constexpr std::optional<AppMode> parse_mode(std::string_view text) noexcept {
@@ -99,34 +128,26 @@ namespace config {
             return std::nullopt;
         }
 
-        constexpr std::optional<uint16_t> parse_recording_key(std::string_view text) noexcept {
+        template <typename Character>
+        constexpr std::optional<uint16_t> parse_recording_key_impl(std::basic_string_view<Character> text) noexcept {
             unsigned int base = 10;
-            if (text.starts_with("0x") || text.starts_with("0X")) {
+            constexpr Character lower_prefix[]{static_cast<Character>('0'), static_cast<Character>('x')};
+            constexpr Character upper_prefix[]{static_cast<Character>('0'), static_cast<Character>('X')};
+            if (text.starts_with(std::basic_string_view<Character>(lower_prefix, 2)) || text.starts_with(std::basic_string_view<Character>(upper_prefix, 2))) {
                 base = 16;
                 text.remove_prefix(2);
             }
-            if (text.empty()) return std::nullopt;
+            const std::optional<unsigned int> value = parse_unsigned_integer(text, base, 254);
+            if (!value.has_value() || *value == 0) return std::nullopt;
+            return static_cast<uint16_t>(*value);
+        }
 
-            unsigned int value = 0;
-            for (const char character : text) {
-                unsigned int digit = 0;
-                if (character >= '0' && character <= '9') {
-                    digit = static_cast<unsigned int>(character - '0');
-                } else if (base == 16 && character >= 'a' && character <= 'f') {
-                    digit = static_cast<unsigned int>(character - 'a') + 10;
-                } else if (base == 16 && character >= 'A' && character <= 'F') {
-                    digit = static_cast<unsigned int>(character - 'A') + 10;
-                } else {
-                    return std::nullopt;
-                }
+        constexpr std::optional<uint16_t> parse_recording_key(std::string_view text) noexcept {
+            return parse_recording_key_impl(text);
+        }
 
-                if (digit >= base) return std::nullopt;
-                value = value * base + digit;
-                if (value > 254) return std::nullopt;
-            }
-
-            if (value == 0) return std::nullopt;
-            return static_cast<uint16_t>(value);
+        constexpr std::optional<uint16_t> parse_recording_key(std::wstring_view text) noexcept {
+            return parse_recording_key_impl(text);
         }
 
         constexpr std::string_view unit_name(OutputUnit unit) noexcept {

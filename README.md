@@ -351,15 +351,14 @@ The tests cover configuration parsing and serialization, unit and calibration ca
 | Path | Purpose |
 | --- | --- |
 | `WinMouseSensConverter/WinMouseSensConverter.cpp` | WinMain and the main message/consumer loop. |
-| `WinMouseSensConverter/WinMouseSensConverter.hpp` | Keyboard/mouse consumption and recording-state transitions. |
 | `WinMouseSensConverter/SYS/low_latency_mousemov.hpp` | Buffered mouse Raw Input thread and atomic movement accumulator. |
 | `WinMouseSensConverter/SYS/low_latency_keyboard.hpp` | Buffered keyboard Raw Input thread and SPSC event queue. |
 | `WinMouseSensConverter/config.hpp` | Header-only user configuration parsing, loading, and atomic saving. |
-| `WinMouseSensConverter/sync.hpp` | Shared recording flag, selected mode, X/Y totals, and shutdown stop source. |
-| `WinMouseSensConverter/ui.cpp` | Window lifecycle, menus, modeless dialogs, and timer-gated redraw dispatch. |
+| `WinMouseSensConverter/sync.hpp` | Shared recording flag, selected mode, and X/Y totals. |
+| `WinMouseSensConverter/ui.cpp` | Keyboard/mouse consumption, recording-state transitions, window lifecycle, menus, modeless dialogs, and timer-gated redraw dispatch. |
 | `WinMouseSensConverter/ui_common.cpp` | Shared Direct2D page, recording state, shortcut card, units, and value formatting. |
 | `WinMouseSensConverter/ui_measurement.cpp` / `ui_calibration.cpp` | Isolated Measurement and Calibration renderers. |
-| `WinMouseSensConverter/WinMouseSensConverter.rc` | UTF-8 icons, dialogs, strings, and version resources. |
+| `WinMouseSensConverter/WinMouseSensConverter.rc` | UTF-8 icons, dialogs, and version resources. |
 | `WinMouseSensConverter/WinMouseSensConverter.manifest` | Administrator execution-level declaration. |
 | `WinMouseSensConverterAutomaticTest/` | Non-elevated x64 console tests and their independent runner. |
 | `build_windows.ps1` | Visual Studio discovery and x64 MSBuild entry point. |
@@ -734,15 +733,14 @@ x64\Release\WinMouseSensConverter.exe
 | 路径 | 用途 |
 | --- | --- |
 | `WinMouseSensConverter/WinMouseSensConverter.cpp` | WinMain 与主消息/消费循环。 |
-| `WinMouseSensConverter/WinMouseSensConverter.hpp` | 消费键盘/鼠标数据并切换记录状态。 |
 | `WinMouseSensConverter/SYS/low_latency_mousemov.hpp` | 批量鼠标 Raw Input 线程和原子位移累加器。 |
 | `WinMouseSensConverter/SYS/low_latency_keyboard.hpp` | 批量键盘 Raw Input 线程和 SPSC 事件队列。 |
 | `WinMouseSensConverter/config.hpp` | 仅头文件的用户配置解析、读取与原子保存实现。 |
-| `WinMouseSensConverter/sync.hpp` | 共享录制标志、当前模式、X/Y 累计值和退出停止源。 |
-| `WinMouseSensConverter/ui.cpp` | 窗口生命周期、菜单、非模态窗口和定时器门控重绘分派。 |
+| `WinMouseSensConverter/sync.hpp` | 共享录制标志、当前模式和 X/Y 累计值。 |
+| `WinMouseSensConverter/ui.cpp` | 消费键盘/鼠标数据、切换记录状态、管理窗口生命周期、菜单、非模态窗口和定时器门控重绘分派。 |
 | `WinMouseSensConverter/ui_common.cpp` | 通用 Direct2D 页面、录制状态、快捷键卡片、单位和数值格式化。 |
 | `WinMouseSensConverter/ui_measurement.cpp` / `ui_calibration.cpp` | 相互隔离的测距与定标模式渲染器。 |
-| `WinMouseSensConverter/WinMouseSensConverter.rc` | UTF-8 图标、对话框、字符串和版本资源。 |
+| `WinMouseSensConverter/WinMouseSensConverter.rc` | UTF-8 图标、对话框和版本资源。 |
 | `WinMouseSensConverter/WinMouseSensConverter.manifest` | 管理员执行级别声明。 |
 | `WinMouseSensConverterAutomaticTest/` | 无需提权的 x64 控制台测试及其独立运行脚本。 |
 | `build_windows.ps1` | Visual Studio 检测与 x64 MSBuild 入口。 |

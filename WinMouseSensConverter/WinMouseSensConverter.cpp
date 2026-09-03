@@ -1,6 +1,6 @@
-#include "WinMouseSensConverter.hpp"
-
 #include "config.hpp"
+#include "sync.hpp"
+#include "ui.hpp"
 
 #include <CommCtrl.h>
 
@@ -17,16 +17,13 @@ int WINAPI WinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, _
     public_data::current_mode_ = user_config.mode;
     HWND hwnd = ui::create_main_window(hInstance, user_config);
 
-    if (hwnd == nullptr || sync::sts_.stop_requested()) {
-        sync::sts_.request_stop();
-        return 1;
-    }
+    if (hwnd == nullptr) return 1;
 
     ShowWindow(hwnd, nCmdShow == 0 ? SW_SHOWDEFAULT : nCmdShow);
 
     MSG msg{0};
     int exit_code = 0;
-    while (!sync::sts_.stop_requested()) {
+    while (true) {
         const BOOL message_result = GetMessageW(&msg, nullptr, 0, 0);
         if (message_result == -1) {
             exit_code = 1;
@@ -45,8 +42,6 @@ int WINAPI WinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, _
         // Redraw the UI only on the UI timer tick, and only if the content has changed since the last redraw.
         ui::finish_main_loop_iteration(hwnd, msg);
     }
-
-    sync::sts_.request_stop();
 
     (void)config::save(user_config);
 

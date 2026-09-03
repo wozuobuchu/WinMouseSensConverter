@@ -16,6 +16,7 @@ namespace automatic_test {
         class DWriteFixture final {
         public:
             DWriteFixture() {
+                state.user_config = &user_config;
                 const HRESULT factory_result = DWriteCreateFactory(
                     DWRITE_FACTORY_TYPE_ISOLATED,
                     __uuidof(IDWriteFactory),
@@ -54,6 +55,7 @@ namespace automatic_test {
                 if (FAILED(state.header_cell_format->SetWordWrapping(DWRITE_WORD_WRAPPING_NO_WRAP))) throw std::runtime_error("header cell SetWordWrapping failed");
             }
 
+            config::UserConfig user_config;
             ui::detail::UiState state;
         };
 
@@ -215,38 +217,62 @@ namespace automatic_test {
             TEST_EXPECT(runner, SUCCEEDED(ui::detail::update_numeric_layout(fixture.state, cache, L"2.540", no_suffix, 300.0f, 100.0f, 56.0f)));
             IDWriteTextLayout* original_layout = cache.layout.Get();
             const auto original_text = cache.display_text;
-            const float original_font_size = cache.primary_font_size;
+            const float original_font_size = cache.requested_primary_font_size;
             fixture.state.value_format.Reset();
             TEST_EXPECT(runner, FAILED(ui::detail::update_numeric_layout(fixture.state, cache, L"3.810", no_suffix, 320.0f, 100.0f, 56.0f)));
             TEST_EXPECT(runner, cache.layout.Get() == original_layout);
             TEST_EXPECT(runner, cache.display_text == original_text);
-            TEST_EXPECT(runner, cache.primary_font_size == original_font_size);
+            TEST_EXPECT(runner, cache.requested_primary_font_size == original_font_size);
         });
 
-        runner.run("peer values derive one fitting core font size", [&] {
+        runner.run("measurement peers reuse formal layouts and share their smaller fit", [&] {
             DWriteFixture fixture;
-            const wchar_t* values[]{L"1.000", L"-1.235e+12"};
-            float fitted_size = 0.0f;
-            TEST_EXPECT(runner, SUCCEEDED(ui::detail::fitting_numeric_font_size(fixture.state, values, std::size(values), 150.0f, 80.0f, 56.0f, fitted_size)));
-            TEST_EXPECT(runner, fitted_size > 0.0f);
-            TEST_EXPECT(runner, fitted_size < 56.0f);
-            ui::detail::TextLayoutCache first;
-            ui::detail::TextLayoutCache second;
-            constexpr UINT32 no_suffix = std::numeric_limits<UINT32>::max();
-            TEST_EXPECT(runner, SUCCEEDED(ui::detail::update_numeric_layout(fixture.state, first, values[0], no_suffix, 150.0f, 80.0f, fitted_size)));
-            TEST_EXPECT(runner, SUCCEEDED(ui::detail::update_numeric_layout(fixture.state, second, values[1], no_suffix, 150.0f, 80.0f, fitted_size)));
-            TEST_EXPECT(runner, first.primary_font_size == second.primary_font_size);
+            std::array<const wchar_t*, 2> values{L"1.000", L"-1.235e+12"};
+            TEST_EXPECT(runner, SUCCEEDED(ui::detail::update_measurement_value_layouts(fixture.state, values, 150.0f, 80.0f, 56.0f)));
+            TEST_EXPECT(runner, fixture.state.numeric_layout_creation_count == 2);
+
+            auto& first = fixture.state.measurement_value_layouts[0];
+            auto& second = fixture.state.measurement_value_layouts[1];
+            IDWriteTextLayout* first_layout = first.layout.Get();
+            IDWriteTextLayout* second_layout = second.layout.Get();
+            TEST_EXPECT(runner, first.content_fit_scale > second.content_fit_scale);
+            TEST_EXPECT(runner, first.applied_fit_scale == second.applied_fit_scale);
+            float first_font_size = 0.0f;
+            float second_font_size = 0.0f;
+            TEST_EXPECT(runner, SUCCEEDED(first.layout->GetFontSize(0, &first_font_size)));
+            TEST_EXPECT(runner, SUCCEEDED(second.layout->GetFontSize(0, &second_font_size)));
+            TEST_EXPECT_NEAR(runner, first_font_size, second_font_size, 0.001f);
+
+            TEST_EXPECT(runner, SUCCEEDED(ui::detail::update_measurement_value_layouts(fixture.state, values, 150.0f, 80.0f, 56.0f)));
+            TEST_EXPECT(runner, fixture.state.numeric_layout_creation_count == 2);
+            TEST_EXPECT(runner, first.layout.Get() == first_layout);
+            TEST_EXPECT(runner, second.layout.Get() == second_layout);
+
+            values[0] = L"2.000";
+            TEST_EXPECT(runner, SUCCEEDED(ui::detail::update_measurement_value_layouts(fixture.state, values, 150.0f, 80.0f, 56.0f)));
+            TEST_EXPECT(runner, fixture.state.numeric_layout_creation_count == 3);
+            TEST_EXPECT(runner, first.layout.Get() != first_layout);
+            TEST_EXPECT(runner, second.layout.Get() == second_layout);
+
+            TEST_EXPECT(runner, SUCCEEDED(ui::detail::update_measurement_value_layouts(fixture.state, values, 800.0f, 100.0f, 56.0f)));
+            TEST_EXPECT(runner, fixture.state.numeric_layout_creation_count == 5);
+            TEST_EXPECT_NEAR(runner, first.content_fit_scale, 1.0f, 0.001f);
+            TEST_EXPECT_NEAR(runner, second.content_fit_scale, 1.0f, 0.001f);
+            TEST_EXPECT(runner, SUCCEEDED(first.layout->GetFontSize(0, &first_font_size)));
+            TEST_EXPECT(runner, SUCCEEDED(second.layout->GetFontSize(0, &second_font_size)));
+            TEST_EXPECT_NEAR(runner, first_font_size, 56.0f, 0.001f);
+            TEST_EXPECT_NEAR(runner, second_font_size, 56.0f, 0.001f);
         });
 
         runner.run("calibration result keeps only its DPI suffix", [&] {
             DWriteFixture fixture;
-            fixture.state.calibration_distance_cm = 10;
             ui::detail::SharedDataSnapshot shared_data{};
             TEST_EXPECT(runner, SUCCEEDED(ui::detail::update_calibration_dpi_layout(fixture.state, shared_data, 400.0f, 100.0f, 56.0f, 18.0f)));
             TEST_EXPECT(runner, cached_text(fixture.state.calibration_dpi_layout) == L"\x2014 DPI");
-            shared_data.accumulated_dx = 100.0;
+            shared_data.accumulated_dx = 3.0;
+            shared_data.accumulated_dy = 4.0;
             TEST_EXPECT(runner, SUCCEEDED(ui::detail::update_calibration_dpi_layout(fixture.state, shared_data, 400.0f, 100.0f, 56.0f, 18.0f)));
-            TEST_EXPECT(runner, cached_text(fixture.state.calibration_dpi_layout) == L"25.40 DPI");
+            TEST_EXPECT(runner, cached_text(fixture.state.calibration_dpi_layout) == L"1.27 DPI");
             TEST_EXPECT(runner, std::wcsstr(fixture.state.calibration_dpi_layout.display_text.data(), L"MEASURED") == nullptr);
             float value_size = 0.0f;
             float suffix_size = 0.0f;
@@ -258,7 +284,6 @@ namespace automatic_test {
 
         runner.run("calibration result shrinks within constrained height", [&] {
             DWriteFixture fixture;
-            fixture.state.calibration_distance_cm = 10;
             ui::detail::SharedDataSnapshot shared_data{};
             shared_data.accumulated_dx = 3196.062992125984;
             TEST_EXPECT(runner, SUCCEEDED(ui::detail::update_calibration_dpi_layout(fixture.state, shared_data, 400.0f, 30.0f, 56.0f, 18.0f)));

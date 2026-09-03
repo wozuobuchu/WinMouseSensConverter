@@ -171,7 +171,6 @@
     <ClInclude Include="targetver.hpp" />
     <ClInclude Include="ui.hpp" />
     <ClInclude Include="ui_internal.hpp" />
-    <ClInclude Include="WinMouseSensConverter.hpp" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="ui.cpp" />
