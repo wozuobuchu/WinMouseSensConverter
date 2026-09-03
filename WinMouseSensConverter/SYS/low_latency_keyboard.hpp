@@ -44,7 +44,9 @@ namespace rawinput {
 
         // Larger bursts are handled by repeatedly draining this fixed-size buffer.
         inline static constexpr size_t kRawInputBatchCapacity = 64;
+        inline static constexpr DWORD kRawInputBatchIntervalMs = 1;
         inline static constexpr DWORD kMessageLoopRetryDelayMs = 1;
+        inline static constexpr DWORD kControlWakeMask = QS_ALLINPUT & ~static_cast<DWORD>(QS_RAWINPUT);
 
         LowLatencyKeyboard() = delete;
 
@@ -220,12 +222,12 @@ namespace rawinput {
             bool running = true;
 
             while (running) {
-                // Wake for queued input without removing the pending WM_INPUT messages.
+                // Exclude Raw Input from the wake mask so reports accumulate until the 1 ms timeout.
                 const DWORD wait_result = MsgWaitForMultipleObjectsEx(
                     0,
                     nullptr,
-                    INFINITE,
-                    QS_ALLINPUT,
+                    kRawInputBatchIntervalMs,
+                    kControlWakeMask,
                     MWMO_INPUTAVAILABLE
                 );
                 bool retry_needed = wait_result == WAIT_FAILED;
