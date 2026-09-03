@@ -419,7 +419,7 @@ namespace {
         AppendMenuW(recording_key_menu, MF_SEPARATOR, 0, nullptr);
         AppendMenuW(recording_key_menu, MF_STRING, kCommandRecordingKeyCustom, L"Custom...");
 
-        AppendMenuW(options, MF_POPUP, reinterpret_cast<UINT_PTR>(dpi_menu), L"ReferenceDPI");
+        AppendMenuW(options, MF_POPUP, reinterpret_cast<UINT_PTR>(dpi_menu), L"Reference DPI");
         AppendMenuW(options, MF_POPUP, reinterpret_cast<UINT_PTR>(unit_menu), L"Unit");
         AppendMenuW(options, MF_POPUP, reinterpret_cast<UINT_PTR>(calibration_distance_menu), L"Calibration Distance");
         AppendMenuW(options, MF_POPUP, reinterpret_cast<UINT_PTR>(recording_key_menu), L"Recording Key");
