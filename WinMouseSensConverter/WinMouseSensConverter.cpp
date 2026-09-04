@@ -14,7 +14,7 @@ int WINAPI WinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, _
     (void)InitCommonControlsEx(&common_controls);
 
     config::UserConfig user_config = config::load_or_create();
-    public_data::current_mode_ = user_config.mode;
+    app_data::current_mode_ = user_config.mode;
     HWND hwnd = ui::create_main_window(hInstance, user_config);
 
     if (hwnd == nullptr) return 1;

@@ -5,8 +5,6 @@
 
 #include "SYS/low_latency_input.hpp"
 
-#include "recording_key.hpp"
-
 #include "sync.hpp"
 
 #include <CommCtrl.h>
@@ -170,6 +168,19 @@ namespace {
         {kCommandRecordingKeyPeriod, VK_OEM_PERIOD, L"PERIOD"},
     }};
 
+    constexpr bool matches_recording_key(uint16_t configured_key, uint16_t event_key) noexcept {
+        switch (configured_key) {
+            case VK_SHIFT:
+                return event_key == VK_LSHIFT || event_key == VK_RSHIFT;
+            case VK_CONTROL:
+                return event_key == VK_LCONTROL || event_key == VK_RCONTROL;
+            case VK_MENU:
+                return event_key == VK_LMENU || event_key == VK_RMENU;
+            default:
+                return configured_key == event_key;
+        }
+    }
+
     bool pull_msg_key(uint16_t recording_key) noexcept {
         static constexpr size_t kQueueSize = 1024;
         static rawinput::LowLatencyInput::KeyEvent queue[kQueueSize];
@@ -178,16 +189,9 @@ namespace {
 
         for (size_t index = 0; index < count; ++index) {
             const rawinput::LowLatencyInput::KeyEvent& event = queue[index];
-            if (event.down == 0 || !main_loop::matches_recording_key(recording_key, event.vkey)) continue;
+            if (event.down == 0 || !matches_recording_key(recording_key, event.vkey)) continue;
 
-            public_data::on_recording_ = public_data::on_recording_ == 0 ? static_cast<uint8_t>(~0) : 0;
-            if (public_data::on_recording_ != 0) {
-                public_data::accumulated_muzmov_dx = 0.0;
-                public_data::accumulated_muzmov_dy = 0.0;
-            }
-
-            const UINT notification_sound = public_data::on_recording_ != 0 ? MB_ICONASTERISK : MB_ICONHAND;
-            (void)MessageBeep(notification_sound);
+            (void)app_func::toggle_recording();
             changed = true;
         }
 
@@ -196,9 +200,9 @@ namespace {
 
     bool pull_msg_mouse() noexcept {
         const auto [dx, dy] = rawinput::LowLatencyInput::sample();
-        if (public_data::on_recording_ != 0) {
-            public_data::accumulated_muzmov_dx += static_cast<double>(dx);
-            public_data::accumulated_muzmov_dy += static_cast<double>(dy);
+        if (app_data::on_recording_ != 0) {
+            app_data::accumulated_muzmov_dx += static_cast<double>(dx);
+            app_data::accumulated_muzmov_dy += static_cast<double>(dy);
             return dx != 0 || dy != 0;
         }
         return false;
@@ -210,7 +214,7 @@ namespace {
         // Apply recording-key state transitions before attributing the pending mouse snapshot.
         const bool key_changed = pull_msg_key(state.user_config->recording_key);
         const bool mouse_changed = pull_msg_mouse();
-        return key_changed || (public_data::on_recording_ != 0 && mouse_changed);
+        return key_changed || (app_data::on_recording_ != 0 && mouse_changed);
     }
 
     int scale_for_dpi(int value, UINT dpi) noexcept {
@@ -327,10 +331,10 @@ namespace {
     bool paint_window(UiState& state) noexcept {
         if (state.user_config == nullptr) return false;
         const ui::view::ViewSnapshot snapshot{
-            public_data::current_mode_,
-            public_data::on_recording_ != 0,
-            public_data::accumulated_muzmov_dx,
-            public_data::accumulated_muzmov_dy,
+            app_data::current_mode_,
+            app_data::on_recording_ != 0,
+            app_data::accumulated_muzmov_dx,
+            app_data::accumulated_muzmov_dy,
             state.user_config->reference_dpi,
             state.user_config->unit,
             state.user_config->calibration_distance_cm,
@@ -352,7 +356,7 @@ namespace {
             }
         }
 
-        const UINT mode_command = public_data::current_mode_ == config::AppMode::calibration ? kCommandModeCalibration : kCommandModeMeasurement;
+        const UINT mode_command = app_data::current_mode_ == config::AppMode::calibration ? kCommandModeCalibration : kCommandModeMeasurement;
         CheckMenuRadioItem(root_menu, kCommandModeFirst, kCommandModeLast, mode_command, MF_BYCOMMAND);
         CheckMenuRadioItem(root_menu, kCommandDpiFirst, kCommandDpiLast, state.reference_dpi_command, MF_BYCOMMAND);
         CheckMenuRadioItem(root_menu, kCommandUnitFirst, kCommandUnitLast, unit_command, MF_BYCOMMAND);
@@ -688,8 +692,8 @@ namespace {
     bool handle_menu_command(UiState& state, UINT command) noexcept {
         if (command == kCommandModeMeasurement || command == kCommandModeCalibration) {
             const config::AppMode mode = command == kCommandModeCalibration ? config::AppMode::calibration : config::AppMode::measurement;
-            if (public_data::current_mode_ != mode) {
-                public_data::current_mode_ = mode;
+            if (app_data::current_mode_ != mode) {
+                app_data::current_mode_ = mode;
                 state.user_config->mode = mode;
                 update_menu_selection(state);
                 state.redraw_dirty = true;

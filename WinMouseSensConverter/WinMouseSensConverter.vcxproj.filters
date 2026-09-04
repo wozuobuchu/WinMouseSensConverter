@@ -33,9 +33,6 @@
     <ClInclude Include="framework.hpp">
       <Filter>头文件</Filter>
     </ClInclude>
-    <ClInclude Include="recording_key.hpp">
-      <Filter>头文件</Filter>
-    </ClInclude>
     <ClInclude Include="targetver.hpp">
       <Filter>头文件</Filter>
     </ClInclude>

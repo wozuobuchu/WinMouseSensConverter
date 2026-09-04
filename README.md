@@ -352,7 +352,7 @@ The keyboard path splits generic Shift, Control, and Alt reports into left/right
 
 #### State, rendering, and dialogs
 
-`sync.hpp` is the cross-mode runtime state: recording flag, current mode, and accumulated X/Y totals. Mode changes also update the persisted `UserConfig`, but they do not create a second state container or reset active measurement data.
+`sync.hpp` keeps cross-mode runtime state in `app_data`: the recording flag, current mode, and accumulated X/Y totals. `app_func::toggle_recording` centralizes recording transitions, clears the totals only when recording starts, and plays the corresponding start or stop sound. Mode changes also update the persisted `UserConfig`, but they do not create a second state container or reset active measurement data.
 
 Window, menu, DPI, display, sizing, paint, and input events only mark `UiState::redraw_dirty`. Actual Direct2D rendering occurs in `finish_main_loop_iteration` only on the main 8 ms timer, skips interactive sizing and minimized windows, and clears the flag after a successful frame. Device-dependent resources are recreated when necessary. DirectWrite layout caches reuse text layouts and scale long header/numeric content to fit. The default client size is `1280 × 720` DIPs and the minimum is `640 × 360` DIPs; the manifest selects Per-Monitor V2 DPI awareness.
 
@@ -373,8 +373,7 @@ The UI uses a portable C++20 header-only component library under `D2DUILIB`. One
 | `WinMouseSensConverter/SYS/low_latency_mousemov.hpp` | Retained legacy mouse implementation; not included by the application. |
 | `WinMouseSensConverter/SYS/low_latency_keyboard.hpp` | Retained legacy keyboard implementation; not included by the application. |
 | `WinMouseSensConverter/config.hpp` | Header-only parsing, validation, loading, default recovery, and atomic-style save replacement. |
-| `WinMouseSensConverter/sync.hpp` | Shared recording flag, selected mode, and X/Y totals. |
-| `WinMouseSensConverter/recording_key.hpp` | Matching rules for generic and side-specific modifier VK values. |
+| `WinMouseSensConverter/sync.hpp` | Shared `app_data` state and centralized `app_func` recording transitions. |
 | `WinMouseSensConverter/ui.cpp` | Input consumption, recording transitions, lifecycle, menus, dialogs, DPI handling, and timer-gated dispatch. |
 | `WinMouseSensConverter/ui_view.hpp/.cpp` | Application formatting, responsive layout, and common/Measurement/Calibration render orchestration. |
 | `WinMouseSensConverter/D2DUILIB/` | Migratable header-only Direct2D/DirectWrite context, render queue, base interface, and reusable components. |
@@ -440,7 +439,7 @@ The runner builds by default. Use `-NoBuild` only after the selected configurati
 .\WinMouseSensConverterAutomaticTest\run_tests.ps1 -Configuration Debug -NoBuild
 ```
 
-Tests cover configuration parsing and serialization, unit and calibration calculations, recording-key matching, component ownership and behavior, the three-render contract, and DirectWrite layout reuse. Rendering tests create only a hidden ordinary test window; they do not create Raw Input threads, access saved user configuration, require physical devices, or start the elevated main executable.
+Tests cover configuration parsing and serialization, recording-state transitions, unit and calibration calculations, component ownership and behavior, the three-render contract, and DirectWrite layout reuse. Recording-transition tests suppress notification sounds. Rendering tests create only a hidden ordinary test window; they do not create Raw Input threads, access saved user configuration, require physical devices, or start the elevated main executable.
 
 #### Contributing
 
@@ -791,7 +790,7 @@ flowchart LR
 
 #### 状态、渲染与窗口
 
-`sync.hpp` 保存跨模式运行时状态：录制标志、当前模式和累计 X/Y。切换模式还会更新持久化 `UserConfig`，但不会创建第二套状态容器，也不会重置当前测量。
+`sync.hpp` 在 `app_data` 中保存跨模式运行时状态：录制标志、当前模式和累计 X/Y。`app_func::toggle_recording` 集中处理录制切换，仅在开始录制时清零累计值，并播放对应的开始或停止提示音。切换模式还会更新持久化 `UserConfig`，但不会创建第二套状态容器，也不会重置当前测量。
 
 窗口、菜单、DPI、显示器、尺寸、系统绘制和输入事件只设置 `UiState::redraw_dirty`。实际 Direct2D 绘制仅在 `finish_main_loop_iteration` 的主窗口 8 ms 定时器节拍发生；交互式缩放和最小化期间跳过，成功绘制后清除脏标记。设备相关资源会按需重建。DirectWrite 布局缓存会复用文字布局，并缩放过长的标题或数值以适应空间。默认客户区为 `1280 × 720` DIP，最小为 `640 × 360` DIP；清单启用 Per-Monitor V2 DPI 感知。
 
@@ -812,8 +811,7 @@ Measurement 数值使用三位小数，把换算后绝对值小于 `0.0005` 的�
 | `WinMouseSensConverter/SYS/low_latency_mousemov.hpp` | 保留的旧鼠标实现；应用不再包含。 |
 | `WinMouseSensConverter/SYS/low_latency_keyboard.hpp` | 保留的旧键盘实现；应用不再包含。 |
 | `WinMouseSensConverter/config.hpp` | 仅头文件的解析、校验、加载、默认恢复和原子式替换保存。 |
-| `WinMouseSensConverter/sync.hpp` | 共享录制标志、当前模式和 X/Y 累计值。 |
-| `WinMouseSensConverter/recording_key.hpp` | 通用与左右专用修饰键 VK 值的匹配规则。 |
+| `WinMouseSensConverter/sync.hpp` | 共享的 `app_data` 状态和集中式 `app_func` 录制切换逻辑。 |
 | `WinMouseSensConverter/ui.cpp` | 输入消费、录制切换、生命周期、菜单、窗口、DPI 处理和定时器门控分派。 |
 | `WinMouseSensConverter/ui_view.hpp/.cpp` | 应用显示格式化、响应式布局，以及公共/Measurement/Calibration 三 Render 调度。 |
 | `WinMouseSensConverter/D2DUILIB/` | 可迁移的 header-only Direct2D/DirectWrite 上下文、渲染队列、组件基类与通用组件。 |
@@ -879,7 +877,7 @@ x64\Release\WinMouseSensConverter.exe
 .\WinMouseSensConverterAutomaticTest\run_tests.ps1 -Configuration Debug -NoBuild
 ```
 
-测试覆盖配置解析与序列化、单位与定标计算、录制快捷键匹配、组件所有权与行为、三 Render 绘制契约和 DirectWrite 布局复用。渲染测试只创建隐藏的普通测试窗口，不会创建 Raw Input 线程、访问已保存的用户配置、要求真实输入设备或启动需要提权的主程序。
+测试覆盖配置解析与序列化、录制状态切换、单位与定标计算、组件所有权与行为、三 Render 绘制契约和 DirectWrite 布局复用。录制切换测试会禁用提示音。渲染测试只创建隐藏的普通测试窗口，不会创建 Raw Input 线程、访问已保存的用户配置、要求真实输入设备或启动需要提权的主程序。
 
 #### 参与贡献
 

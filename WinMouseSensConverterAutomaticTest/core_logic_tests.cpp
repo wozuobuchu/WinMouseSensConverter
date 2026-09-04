@@ -1,6 +1,6 @@
 #include "test_groups.hpp"
 
-#include "recording_key.hpp"
+#include "sync.hpp"
 #include "ui_view.hpp"
 #include "SYS/cursor_pos.hpp"
 
@@ -48,21 +48,30 @@ namespace automatic_test {
             TEST_EXPECT_NEAR(runner, ui::view::calibration_dpi_from_counts(500.0, 50), 25.4, 1e-12);
         });
 
-        runner.run("recording key matching normalizes modifier sides", [&] {
-            TEST_EXPECT(runner, main_loop::matches_recording_key(VK_F1, VK_F1));
-            TEST_EXPECT(runner, !main_loop::matches_recording_key(VK_F1, VK_F2));
+        runner.run("recording transitions reset only when starting", [&] {
+            app_data::on_recording_ = 0;
+            app_data::current_mode_ = config::AppMode::calibration;
+            app_data::accumulated_muzmov_dx = 12.0;
+            app_data::accumulated_muzmov_dy = -34.0;
 
-            TEST_EXPECT(runner, main_loop::matches_recording_key(VK_SHIFT, VK_LSHIFT));
-            TEST_EXPECT(runner, main_loop::matches_recording_key(VK_SHIFT, VK_RSHIFT));
-            TEST_EXPECT(runner, !main_loop::matches_recording_key(VK_SHIFT, VK_CONTROL));
+            TEST_EXPECT(runner, app_func::toggle_recording(false));
+            TEST_EXPECT(runner, app_data::on_recording_ != 0);
+            TEST_EXPECT_NEAR(runner, app_data::accumulated_muzmov_dx, 0.0, 0.0);
+            TEST_EXPECT_NEAR(runner, app_data::accumulated_muzmov_dy, 0.0, 0.0);
+            TEST_EXPECT(runner, app_data::current_mode_ == config::AppMode::calibration);
 
-            TEST_EXPECT(runner, main_loop::matches_recording_key(VK_CONTROL, VK_LCONTROL));
-            TEST_EXPECT(runner, main_loop::matches_recording_key(VK_CONTROL, VK_RCONTROL));
-            TEST_EXPECT(runner, !main_loop::matches_recording_key(VK_CONTROL, VK_SHIFT));
+            app_data::accumulated_muzmov_dx = 56.0;
+            app_data::accumulated_muzmov_dy = -78.0;
 
-            TEST_EXPECT(runner, main_loop::matches_recording_key(VK_MENU, VK_LMENU));
-            TEST_EXPECT(runner, main_loop::matches_recording_key(VK_MENU, VK_RMENU));
-            TEST_EXPECT(runner, !main_loop::matches_recording_key(VK_MENU, VK_CONTROL));
+            TEST_EXPECT(runner, !app_func::toggle_recording(false));
+            TEST_EXPECT(runner, app_data::on_recording_ == 0);
+            TEST_EXPECT_NEAR(runner, app_data::accumulated_muzmov_dx, 56.0, 0.0);
+            TEST_EXPECT_NEAR(runner, app_data::accumulated_muzmov_dy, -78.0, 0.0);
+            TEST_EXPECT(runner, app_data::current_mode_ == config::AppMode::calibration);
+
+            app_data::current_mode_ = config::AppMode::measurement;
+            app_data::accumulated_muzmov_dx = 0.0;
+            app_data::accumulated_muzmov_dy = 0.0;
         });
     }
 
