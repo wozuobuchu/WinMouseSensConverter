@@ -327,9 +327,10 @@ flowchart LR
     Queue -->|"up to 1024 per UI tick"| Main
 
     Main --> Shared["sync.hpp<br/>mode, recording, X/Y totals"]
-    Shared --> Dispatcher{"Mode dispatcher"}
-    Dispatcher --> Measurement["Measurement renderer"]
-    Dispatcher --> Calibration["Calibration renderer"]
+    Shared --> Dispatcher{"Application mode dispatcher"}
+    Dispatcher --> Common["Common component render"]
+    Dispatcher --> Measurement["Measurement component render"]
+    Dispatcher --> Calibration["Calibration component render"]
     Main --> Dialogs["Modeless dialogs"]
     Main -->|"redraw_dirty + timer gate"| D2D["Direct2D / DirectWrite"]
 ```
@@ -357,7 +358,7 @@ Window, menu, DPI, display, sizing, paint, and input events only mark `UiState::
 
 Measurement values use three decimal places, normalize converted magnitudes smaller than `0.0005` to displayed zero, and switch to scientific notation for non-finite or extremely large values. Calibration shows `— DPI` before any movement, normally uses two decimal places, and also falls back to scientific notation for extremely large results. The two Measurement cards share the smaller calculated fit scale so X and Y retain consistent typography.
 
-The dispatcher calls exactly one isolated renderer per frame: `ui::modes::measurement` or `ui::modes::calibration`. Shared page layout, formatting, cards, recording state, and key badge drawing live in the common UI layer. About, Instruction, custom DPI, custom calibration-distance, and custom recording-key windows are modeless and are routed through `ui::preprocess_modeless_dialog_message`. Only failure to initialize Direct2D/DirectWrite produces the startup error dialog.
+The UI uses a portable C++20 header-only component library under `D2DUILIB`. One window-level `D2duiContext` owns and caches the Direct2D/DirectWrite resources. The application keeps three persistent component queues: common, Measurement, and Calibration. Each frame opens one Direct2D transaction, draws the common queue followed by exactly one mode queue, and closes that transaction. Switching modes neither recreates components nor duplicates the cross-mode state. About, Instruction, custom DPI, custom calibration-distance, and custom recording-key windows remain modeless and are routed through `ui::preprocess_modeless_dialog_message`.
 
 #### Configuration lifecycle
 
@@ -375,9 +376,8 @@ The dispatcher calls exactly one isolated renderer per frame: `ui::modes::measur
 | `WinMouseSensConverter/sync.hpp` | Shared recording flag, selected mode, and X/Y totals. |
 | `WinMouseSensConverter/recording_key.hpp` | Matching rules for generic and side-specific modifier VK values. |
 | `WinMouseSensConverter/ui.cpp` | Input consumption, recording transitions, lifecycle, menus, dialogs, DPI handling, and timer-gated dispatch. |
-| `WinMouseSensConverter/ui_common.cpp` | Shared Direct2D page, responsive layout, DirectWrite caches, units, formulas, and formatting. |
-| `WinMouseSensConverter/ui_measurement.cpp` | Signed horizontal/vertical Measurement renderer. |
-| `WinMouseSensConverter/ui_calibration.cpp` | Net-vector calibrated-DPI renderer. |
+| `WinMouseSensConverter/ui_view.hpp/.cpp` | Application formatting, responsive layout, and common/Measurement/Calibration render orchestration. |
+| `WinMouseSensConverter/D2DUILIB/` | Migratable header-only Direct2D/DirectWrite context, render queue, base interface, and reusable components. |
 | `WinMouseSensConverter/WinMouseSensConverter.rc` | UTF-8 icons, dialogs, strings, and version resources. |
 | `WinMouseSensConverter/WinMouseSensConverter.manifest` | Per-Monitor V2 awareness and administrator execution level. |
 | `WinMouseSensConverterAutomaticTest/` | Non-elevated x64 console tests and independent runner. |
@@ -440,7 +440,7 @@ The runner builds by default. Use `-NoBuild` only after the selected configurati
 .\WinMouseSensConverterAutomaticTest\run_tests.ps1 -Configuration Debug -NoBuild
 ```
 
-Tests cover configuration parsing and serialization, unit and calibration calculations, recording-key matching, and DirectWrite layout-cache behavior. They do not create Raw Input threads, access saved user configuration, or require physical devices.
+Tests cover configuration parsing and serialization, unit and calibration calculations, recording-key matching, component ownership and behavior, the three-render contract, and DirectWrite layout reuse. Rendering tests create only a hidden ordinary test window; they do not create Raw Input threads, access saved user configuration, require physical devices, or start the elevated main executable.
 
 #### Contributing
 
@@ -766,9 +766,10 @@ flowchart LR
     Queue -->|"每个 UI 节拍最多 1024 个"| Main
 
     Main --> Shared["sync.hpp<br/>模式、录制状态、X/Y 累计值"]
-    Shared --> Dispatcher{"模式分派"}
-    Dispatcher --> Measurement["测量模式渲染器"]
-    Dispatcher --> Calibration["定标模式渲染器"]
+    Shared --> Dispatcher{"应用模式分派"}
+    Dispatcher --> Common["公共组件 Render"]
+    Dispatcher --> Measurement["Measurement 组件 Render"]
+    Dispatcher --> Calibration["Calibration 组件 Render"]
     Main --> Dialogs["非模态窗口"]
     Main -->|"redraw_dirty + 定时器门控"| D2D["Direct2D / DirectWrite"]
 ```
@@ -796,7 +797,7 @@ flowchart LR
 
 Measurement 数值使用三位小数，把换算后绝对值小于 `0.0005` 的结果显示为零，并在非有限值或极大数值时改用科学计数法。尚未产生移动时，Calibration 显示 `— DPI`；通常使用两位小数，极大结果同样改用科学计数法。两个 Measurement 卡片共同采用较小的计算适配比例，使 X/Y 字体尺寸保持一致。
 
-分派器每帧只调用一个隔离的 `ui::modes::measurement` 或 `ui::modes::calibration` 渲染器；通用页面布局、格式化、卡片、录制状态和按键徽章绘制位于公共 UI 层。“关于”、“使用说明”、自定义 DPI、自定义定标距离和自定义录制键窗口保持非模态，并统一经过 `ui::preprocess_modeless_dialog_message`。只有 Direct2D/DirectWrite 初始化失败会显示启动错误窗口。
+界面使用位于 `D2DUILIB` 下、可迁移的 C++20 header-only 组件库。窗口级唯一 `D2duiContext` 统一拥有并缓存 Direct2D/DirectWrite 资源；应用长期保存公共、Measurement 和 Calibration 三个组件队列。每帧只开启一次 Direct2D 绘制事务，先绘制公共队列，再绘制当前模式的一个队列，最后统一结束事务。模式切换不会重建组件，也不会复制跨模式状态。“关于”、“使用说明”、自定义 DPI、自定义定标距离和自定义录制键窗口保持非模态，并统一经过 `ui::preprocess_modeless_dialog_message`。
 
 #### 配置生命周期
 
@@ -814,9 +815,8 @@ Measurement 数值使用三位小数，把换算后绝对值小于 `0.0005` 的�
 | `WinMouseSensConverter/sync.hpp` | 共享录制标志、当前模式和 X/Y 累计值。 |
 | `WinMouseSensConverter/recording_key.hpp` | 通用与左右专用修饰键 VK 值的匹配规则。 |
 | `WinMouseSensConverter/ui.cpp` | 输入消费、录制切换、生命周期、菜单、窗口、DPI 处理和定时器门控分派。 |
-| `WinMouseSensConverter/ui_common.cpp` | 公共 Direct2D 页面、响应式布局、DirectWrite 缓存、单位、公式和格式化。 |
-| `WinMouseSensConverter/ui_measurement.cpp` | 有符号水平/垂直测量模式渲染器。 |
-| `WinMouseSensConverter/ui_calibration.cpp` | 最终净向量 DPI 定标渲染器。 |
+| `WinMouseSensConverter/ui_view.hpp/.cpp` | 应用显示格式化、响应式布局，以及公共/Measurement/Calibration 三 Render 调度。 |
+| `WinMouseSensConverter/D2DUILIB/` | 可迁移的 header-only Direct2D/DirectWrite 上下文、渲染队列、组件基类与通用组件。 |
 | `WinMouseSensConverter/WinMouseSensConverter.rc` | UTF-8 图标、窗口、字符串和版本资源。 |
 | `WinMouseSensConverter/WinMouseSensConverter.manifest` | Per-Monitor V2 感知和管理员执行级别。 |
 | `WinMouseSensConverterAutomaticTest/` | 无需提权的 x64 控制台测试和独立运行脚本。 |
@@ -879,7 +879,7 @@ x64\Release\WinMouseSensConverter.exe
 .\WinMouseSensConverterAutomaticTest\run_tests.ps1 -Configuration Debug -NoBuild
 ```
 
-测试覆盖配置解析与序列化、单位与定标计算、录制快捷键匹配和 DirectWrite 布局缓存。测试不会创建 Raw Input 线程、访问已保存的用户配置或要求真实输入设备。
+测试覆盖配置解析与序列化、单位与定标计算、录制快捷键匹配、组件所有权与行为、三 Render 绘制契约和 DirectWrite 布局复用。渲染测试只创建隐藏的普通测试窗口，不会创建 Raw Input 线程、访问已保存的用户配置、要求真实输入设备或启动需要提权的主程序。
 
 #### 参与贡献
 

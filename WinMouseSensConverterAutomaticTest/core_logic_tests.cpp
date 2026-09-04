@@ -1,7 +1,7 @@
 #include "test_groups.hpp"
 
 #include "recording_key.hpp"
-#include "ui_internal.hpp"
+#include "ui_view.hpp"
 #include "SYS/cursor_pos.hpp"
 
 #include <array>
@@ -36,16 +36,16 @@ namespace automatic_test {
             }};
 
             for (const auto& [unit, value] : expected) {
-                TEST_EXPECT_NEAR(runner, ui::detail::convert_distance(raw_count, reference_dpi, unit), value, 1e-12);
-                TEST_EXPECT_NEAR(runner, ui::detail::convert_distance(-raw_count, reference_dpi, unit), -value, 1e-12);
-                TEST_EXPECT_NEAR(runner, ui::detail::convert_distance(0.0, reference_dpi, unit), 0.0, 0.0);
+                TEST_EXPECT_NEAR(runner, ui::view::convert_distance(raw_count, reference_dpi, unit), value, 1e-12);
+                TEST_EXPECT_NEAR(runner, ui::view::convert_distance(-raw_count, reference_dpi, unit), -value, 1e-12);
+                TEST_EXPECT_NEAR(runner, ui::view::convert_distance(0.0, reference_dpi, unit), 0.0, 0.0);
             }
         });
 
         runner.run("calibration converts an existing count magnitude", [&] {
-            TEST_EXPECT_NEAR(runner, ui::detail::calibration_dpi_from_counts(5.0, 10), 1.27, 1e-12);
-            TEST_EXPECT_NEAR(runner, ui::detail::calibration_dpi_from_counts(0.0, 10), 0.0, 0.0);
-            TEST_EXPECT_NEAR(runner, ui::detail::calibration_dpi_from_counts(500.0, 50), 25.4, 1e-12);
+            TEST_EXPECT_NEAR(runner, ui::view::calibration_dpi_from_counts(5.0, 10), 1.27, 1e-12);
+            TEST_EXPECT_NEAR(runner, ui::view::calibration_dpi_from_counts(0.0, 10), 0.0, 0.0);
+            TEST_EXPECT_NEAR(runner, ui::view::calibration_dpi_from_counts(500.0, 50), 25.4, 1e-12);
         });
 
         runner.run("recording key matching normalizes modifier sides", [&] {

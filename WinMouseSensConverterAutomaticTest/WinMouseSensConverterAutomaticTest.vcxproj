@@ -63,7 +63,7 @@
       <SubSystem>Console</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <UACExecutionLevel>AsInvoker</UACExecutionLevel>
-      <AdditionalDependencies>dwrite.lib;ole32.lib;shell32.lib;user32.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>d2d1.lib;dwrite.lib;ole32.lib;shell32.lib;user32.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
@@ -89,11 +89,8 @@
     <ClCompile Include="core_logic_tests.cpp" />
     <ClCompile Include="layout_cache_tests.cpp" />
     <ClCompile Include="test_main.cpp" />
-    <ClCompile Include="..\WinMouseSensConverter\ui_calibration.cpp">
-      <Link>Production\ui_calibration.cpp</Link>
-    </ClCompile>
-    <ClCompile Include="..\WinMouseSensConverter\ui_common.cpp">
-      <Link>Production\ui_common.cpp</Link>
+    <ClCompile Include="..\WinMouseSensConverter\ui_view.cpp">
+      <Link>Production\ui_view.cpp</Link>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>

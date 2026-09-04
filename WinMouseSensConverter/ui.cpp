@@ -1,5 +1,5 @@
 #include "ui.hpp"
-#include "ui_internal.hpp"
+#include "ui_view.hpp"
 
 #include "Resource.hpp"
 
@@ -10,28 +10,20 @@
 #include "sync.hpp"
 
 #include <CommCtrl.h>
-#include <d2d1.h>
-#include <dwrite.h>
 #include <shellapi.h>
 #include <uxtheme.h>
-#include <wrl/client.h>
 
 #include <algorithm>
 #include <array>
 #include <cstdint>
 #include <cwchar>
 #include <iterator>
-#include <limits>
 #include <memory>
 #include <optional>
 #include <string>
 #include <string_view>
-#include <utility>
 
 namespace {
-
-    using Microsoft::WRL::ComPtr;
-    using ui::detail::UiState;
 
     constexpr wchar_t kWindowClassName[] = L"WinMouseSensConverterMainWindow";
     constexpr wchar_t kWindowTitle[] = L"WinMouseSensConverter";
@@ -92,6 +84,33 @@ namespace {
     constexpr UINT kCommandExit = 1202;
 
     using Unit = config::OutputUnit;
+
+    struct UiState {
+        HWND hwnd = nullptr;
+        HWND about_dialog = nullptr;
+        HWND instruction_dialog = nullptr;
+        HWND custom_dpi_dialog = nullptr;
+        HWND custom_calibration_distance_dialog = nullptr;
+        HWND custom_recording_key_dialog = nullptr;
+        HMENU root_menu = nullptr;
+        bool owned_by_window = false;
+        bool in_size_move = false;
+        bool minimized = false;
+        bool redraw_dirty = true;
+        UINT dpi = USER_DEFAULT_SCREEN_DPI;
+        config::UserConfig* user_config = nullptr;
+        std::array<wchar_t, 64> recording_key_name{L'F', L'2', L'\0'};
+        UINT32 recording_key_name_length = 2;
+        UINT recording_key_command = 0;
+        UINT reference_dpi_command = 0;
+        UINT calibration_distance_command = 0;
+        d2dui::D2duiContext d2dui_context;
+        ui::view::MainView main_view;
+
+        ~UiState() {
+            if (root_menu != nullptr) DestroyMenu(root_menu);
+        }
+    };
 
     struct DpiMenuEntry {
         UINT command;
@@ -198,57 +217,6 @@ namespace {
         return MulDiv(value, static_cast<int>(dpi), USER_DEFAULT_SCREEN_DPI);
     }
 
-    HRESULT create_text_format(IDWriteFactory* factory, float font_size, DWRITE_FONT_WEIGHT weight, DWRITE_TEXT_ALIGNMENT alignment, DWRITE_PARAGRAPH_ALIGNMENT paragraph_alignment, IDWriteTextFormat** format) noexcept {
-        HRESULT result = factory->CreateTextFormat(
-            L"Segoe UI",
-            nullptr,
-            weight,
-            DWRITE_FONT_STYLE_NORMAL,
-            DWRITE_FONT_STRETCH_NORMAL,
-            font_size,
-            L"en-us",
-            format
-        );
-        if (FAILED(result)) return result;
-
-        result = (*format)->SetTextAlignment(alignment);
-        if (FAILED(result)) return result;
-        result = (*format)->SetParagraphAlignment(paragraph_alignment);
-        if (FAILED(result)) return result;
-        return (*format)->SetWordWrapping(DWRITE_WORD_WRAPPING_NO_WRAP);
-    }
-
-    HRESULT initialize_device_independent_resources(UiState& state) noexcept {
-        D2D1_FACTORY_OPTIONS options{};
-
-        HRESULT result = D2D1CreateFactory(
-            D2D1_FACTORY_TYPE_SINGLE_THREADED,
-            __uuidof(ID2D1Factory),
-            &options,
-            reinterpret_cast<void**>(state.d2d_factory.GetAddressOf())
-        );
-        if (FAILED(result)) return result;
-
-        result = DWriteCreateFactory(
-            DWRITE_FACTORY_TYPE_SHARED,
-            __uuidof(IDWriteFactory),
-            reinterpret_cast<IUnknown**>(state.write_factory.GetAddressOf())
-        );
-        if (FAILED(result)) return result;
-
-        result = create_text_format(state.write_factory.Get(), 56.0f, DWRITE_FONT_WEIGHT_SEMI_BOLD, DWRITE_TEXT_ALIGNMENT_CENTER, DWRITE_PARAGRAPH_ALIGNMENT_CENTER, state.value_format.GetAddressOf());
-        if (FAILED(result)) return result;
-        result = create_text_format(state.write_factory.Get(), 14.0f, DWRITE_FONT_WEIGHT_SEMI_BOLD, DWRITE_TEXT_ALIGNMENT_CENTER, DWRITE_PARAGRAPH_ALIGNMENT_CENTER, state.label_format.GetAddressOf());
-        if (FAILED(result)) return result;
-        result = create_text_format(state.write_factory.Get(), 14.0f, DWRITE_FONT_WEIGHT_SEMI_BOLD, DWRITE_TEXT_ALIGNMENT_CENTER, DWRITE_PARAGRAPH_ALIGNMENT_CENTER, state.header_cell_format.GetAddressOf());
-        if (FAILED(result)) return result;
-        result = create_text_format(state.write_factory.Get(), 14.0f, DWRITE_FONT_WEIGHT_SEMI_BOLD, DWRITE_TEXT_ALIGNMENT_CENTER, DWRITE_PARAGRAPH_ALIGNMENT_CENTER, state.mode_format.GetAddressOf());
-        if (FAILED(result)) return result;
-        result = create_text_format(state.write_factory.Get(), 14.0f, DWRITE_FONT_WEIGHT_SEMI_BOLD, DWRITE_TEXT_ALIGNMENT_LEADING, DWRITE_PARAGRAPH_ALIGNMENT_CENTER, state.footer_format.GetAddressOf());
-        if (FAILED(result)) return result;
-        return create_text_format(state.write_factory.Get(), 14.0f, DWRITE_FONT_WEIGHT_SEMI_BOLD, DWRITE_TEXT_ALIGNMENT_CENTER, DWRITE_PARAGRAPH_ALIGNMENT_CENTER, state.badge_format.GetAddressOf());
-    }
-
     constexpr bool uses_extended_key_name(uint16_t virtual_key) noexcept {
         switch (virtual_key) {
             case VK_CANCEL:
@@ -278,7 +246,6 @@ namespace {
     }
 
     void initialize_recording_key_display(UiState& state, uint16_t recording_key) noexcept {
-        state.shortcut_badge_width = 48.0f;
         const UINT scan_code = MapVirtualKeyW(recording_key, MAPVK_VK_TO_VSC_EX);
         LONG key_name_parameter = static_cast<LONG>((scan_code & 0xFFu) << 16);
         if ((scan_code & 0xFF00u) != 0 || uses_extended_key_name(recording_key)) key_name_parameter |= 1L << 24;
@@ -291,89 +258,6 @@ namespace {
             state.recording_key_name_length = written > 0 ? static_cast<UINT32>(written) : 0;
         }
 
-        ComPtr<IDWriteTextLayout> layout;
-        const HRESULT layout_result = state.write_factory->CreateTextLayout(
-            state.recording_key_name.data(),
-            state.recording_key_name_length,
-            state.badge_format.Get(),
-            512.0f,
-            34.0f,
-            layout.GetAddressOf()
-        );
-        if (FAILED(layout_result)) return;
-
-        DWRITE_TEXT_METRICS metrics{};
-        if (SUCCEEDED(layout->GetMetrics(&metrics))) {
-            state.shortcut_badge_width = std::max(48.0f, metrics.widthIncludingTrailingWhitespace + 24.0f);
-        }
-    }
-
-    void discard_device_resources(UiState& state) noexcept {
-        state.switch_track_brush.Reset();
-        state.mode_fill_brush.Reset();
-        state.accent_brush.Reset();
-        state.secondary_text_brush.Reset();
-        state.primary_text_brush.Reset();
-        state.shadow_brush.Reset();
-        state.border_brush.Reset();
-        state.surface_brush.Reset();
-        state.render_target.Reset();
-    }
-
-    HRESULT create_brush(ID2D1RenderTarget* target, UINT32 rgb, ID2D1SolidColorBrush** brush, float alpha = 1.0f) noexcept {
-        return target->CreateSolidColorBrush(D2D1::ColorF(rgb, alpha), brush);
-    }
-
-    HRESULT ensure_device_resources(UiState& state) noexcept {
-        RECT client{};
-        if (!GetClientRect(state.hwnd, &client)) return E_FAIL;
-        const UINT width = static_cast<UINT>(std::max<LONG>(0, client.right - client.left));
-        const UINT height = static_cast<UINT>(std::max<LONG>(0, client.bottom - client.top));
-        if (width == 0 || height == 0) return S_FALSE;
-
-        if (state.render_target != nullptr) {
-            state.render_target->SetDpi(static_cast<float>(state.dpi), static_cast<float>(state.dpi));
-
-            const D2D1_SIZE_U pixel_size = state.render_target->GetPixelSize();
-            if (pixel_size.width != width || pixel_size.height != height) {
-                return state.render_target->Resize(D2D1::SizeU(width, height));
-            }
-            return S_OK;
-        }
-
-        const D2D1_RENDER_TARGET_PROPERTIES target_properties = D2D1::RenderTargetProperties(
-            D2D1_RENDER_TARGET_TYPE_DEFAULT,
-            D2D1::PixelFormat(DXGI_FORMAT_UNKNOWN, D2D1_ALPHA_MODE_UNKNOWN),
-            static_cast<float>(state.dpi),
-            static_cast<float>(state.dpi)
-        );
-        const D2D1_HWND_RENDER_TARGET_PROPERTIES hwnd_properties = D2D1::HwndRenderTargetProperties(
-            state.hwnd,
-            D2D1::SizeU(width, height),
-            D2D1_PRESENT_OPTIONS_NONE
-        );
-
-        HRESULT result = state.d2d_factory->CreateHwndRenderTarget(target_properties, hwnd_properties, state.render_target.GetAddressOf());
-        if (FAILED(result)) return result;
-
-        state.render_target->SetAntialiasMode(D2D1_ANTIALIAS_MODE_PER_PRIMITIVE);
-        state.render_target->SetTextAntialiasMode(D2D1_TEXT_ANTIALIAS_MODE_CLEARTYPE);
-
-        result = create_brush(state.render_target.Get(), 0xFFFFFF, state.surface_brush.GetAddressOf());
-        if (FAILED(result)) return result;
-        result = create_brush(state.render_target.Get(), 0xE1E7EF, state.border_brush.GetAddressOf());
-        if (FAILED(result)) return result;
-        result = create_brush(state.render_target.Get(), 0xD8E0EA, state.shadow_brush.GetAddressOf(), 0.72f);
-        if (FAILED(result)) return result;
-        result = create_brush(state.render_target.Get(), 0x172033, state.primary_text_brush.GetAddressOf());
-        if (FAILED(result)) return result;
-        result = create_brush(state.render_target.Get(), 0x687386, state.secondary_text_brush.GetAddressOf());
-        if (FAILED(result)) return result;
-        result = create_brush(state.render_target.Get(), 0x2563EB, state.accent_brush.GetAddressOf());
-        if (FAILED(result)) return result;
-        result = create_brush(state.render_target.Get(), 0xE8F0FE, state.mode_fill_brush.GetAddressOf());
-        if (FAILED(result)) return result;
-        return create_brush(state.render_target.Get(), 0xC7CBD1, state.switch_track_brush.GetAddressOf());
     }
 
     HMENU create_main_menu() noexcept {
@@ -441,28 +325,18 @@ namespace {
     }
 
     bool paint_window(UiState& state) noexcept {
-        const HRESULT resource_result = ensure_device_resources(state);
-        if (resource_result == S_FALSE) return false;
-        if (FAILED(resource_result)) {
-            discard_device_resources(state);
-            return false;
-        }
-
-        state.render_target->BeginDraw();
-        state.render_target->SetTransform(D2D1::Matrix3x2F::Identity());
-        state.render_target->Clear(D2D1::ColorF(0xF4F7FB));
-        const ui::detail::SharedDataSnapshot shared_data = ui::detail::capture_shared_data();
-        if (shared_data.mode == config::AppMode::calibration) {
-            ui::modes::calibration::draw(state, shared_data);
-        } else {
-            ui::modes::measurement::draw(state, shared_data);
-        }
-
-        const HRESULT draw_result = state.render_target->EndDraw();
-        if (draw_result == D2DERR_RECREATE_TARGET) {
-            discard_device_resources(state);
-        }
-        return SUCCEEDED(draw_result);
+        if (state.user_config == nullptr) return false;
+        const ui::view::ViewSnapshot snapshot{
+            public_data::current_mode_,
+            public_data::on_recording_ != 0,
+            public_data::accumulated_muzmov_dx,
+            public_data::accumulated_muzmov_dy,
+            state.user_config->reference_dpi,
+            state.user_config->unit,
+            state.user_config->calibration_distance_cm,
+            std::wstring_view(state.recording_key_name.data(), state.recording_key_name_length),
+        };
+        return state.main_view.render(state.d2dui_context, snapshot) == S_OK;
     }
 
     void update_menu_selection(UiState& state) noexcept {
@@ -957,6 +831,7 @@ namespace {
             case WM_DPICHANGED:
                 if (state != nullptr) {
                     state->dpi = HIWORD(wparam);
+                    state->d2dui_context.set_dpi(state->dpi);
                     const RECT* suggested = reinterpret_cast<const RECT*>(lparam);
                     SetWindowPos(hwnd, nullptr, suggested->left, suggested->top, suggested->right - suggested->left, suggested->bottom - suggested->top, SWP_NOACTIVATE | SWP_NOZORDER);
                     state->redraw_dirty = true;
@@ -1057,10 +932,6 @@ namespace ui {
             state->reference_dpi_command = dpi_command_for_value(user_config.reference_dpi);
             state->calibration_distance_command = calibration_distance_command_for_value(user_config.calibration_distance_cm);
             state->recording_key_command = recording_key_command_for_value(user_config.recording_key);
-            if (FAILED(initialize_device_independent_resources(*state))) {
-                show_startup_rendering_error();
-                return nullptr;
-            }
             initialize_recording_key_display(*state, user_config.recording_key);
 
             state->root_menu = create_main_menu();
@@ -1088,6 +959,12 @@ namespace ui {
                 state.get()
             );
             if (hwnd == nullptr) return nullptr;
+
+            if (FAILED(state->d2dui_context.initialize(hwnd, state->dpi))) {
+                show_startup_rendering_error();
+                DestroyWindow(hwnd);
+                return nullptr;
+            }
 
             if (!SetMenu(hwnd, state->root_menu)) {
                 DestroyWindow(hwnd);

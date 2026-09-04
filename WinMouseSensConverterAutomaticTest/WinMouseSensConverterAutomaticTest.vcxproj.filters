@@ -32,10 +32,7 @@
     <ClCompile Include="test_main.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="..\WinMouseSensConverter\ui_calibration.cpp">
-      <Filter>Production</Filter>
-    </ClCompile>
-    <ClCompile Include="..\WinMouseSensConverter\ui_common.cpp">
+    <ClCompile Include="..\WinMouseSensConverter\ui_view.cpp">
       <Filter>Production</Filter>
     </ClCompile>
   </ItemGroup>

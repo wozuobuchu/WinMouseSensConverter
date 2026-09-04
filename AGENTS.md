@@ -67,7 +67,7 @@ vcpkg integrate install
 - Preserve the single combined Raw Input message thread, its 1 ms buffered-input interval, and its single-producer/single-consumer key-event queue design.
 - Keep keyboard and mouse-button transitions deduplicated through the shared `key_down_` state table. Map the five physical mouse buttons to their standard VK values; do not enqueue vertical or horizontal wheel movement as key events.
 - Keep cross-mode runtime data in `sync.hpp`: the recording flag, current mode, and accumulated X/Y values must not be replaced by a second application-state container.
-- Keep mode renderers isolated under `ui::modes::measurement` and `ui::modes::calibration`; put reusable drawing and formatting in the common UI layer, and dispatch exactly one mode renderer per frame.
+- Keep the common, Measurement, and Calibration `D2duiSystemRender` queues isolated in the application view layer. Open one frame, draw the common queue and exactly one mode queue, then end the frame; keep reusable rendering components in `D2DUILIB`.
 - Keep local include dependencies acyclic. Component implementations must include their interface and direct dependencies instead of an application umbrella header that includes the component interface; avoid reciprocal includes and back-edges between layers.
 - Never perform blocking dialogs, waits, file/network operations, or thread joins in menu handlers or paint paths.
 - Do not perform or request redraws independently from UI event handlers. Events that change visible UI state, including system paint events, must only set `UiState::redraw_dirty = true`; keep actual rendering centralized in the timer-gated end-of-main-loop path.

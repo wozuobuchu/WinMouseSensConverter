@@ -172,13 +172,21 @@
     <ClInclude Include="SYS\low_latency_mousemov.hpp" />
     <ClInclude Include="targetver.hpp" />
     <ClInclude Include="ui.hpp" />
-    <ClInclude Include="ui_internal.hpp" />
+    <ClInclude Include="ui_view.hpp" />
+    <ClInclude Include="D2DUILIB\D2DUILIB_INTERFACE\d2dui.hpp" />
+    <ClInclude Include="D2DUILIB\D2DUILIB_INTERFACE\d2dui_component_base.hpp" />
+    <ClInclude Include="D2DUILIB\D2DUILIB_INTERFACE\d2dui_system_render.hpp" />
+    <ClInclude Include="D2DUILIB\D2DUILIB_COMPONENT\d2dui_labeled_value_grid.hpp" />
+    <ClInclude Include="D2DUILIB\D2DUILIB_COMPONENT\d2dui_line.hpp" />
+    <ClInclude Include="D2DUILIB\D2DUILIB_COMPONENT\d2dui_panel.hpp" />
+    <ClInclude Include="D2DUILIB\D2DUILIB_COMPONENT\d2dui_segmented_header.hpp" />
+    <ClInclude Include="D2DUILIB\D2DUILIB_COMPONENT\d2dui_status_bar.hpp" />
+    <ClInclude Include="D2DUILIB\D2DUILIB_COMPONENT\d2dui_switch.hpp" />
+    <ClInclude Include="D2DUILIB\D2DUILIB_COMPONENT\d2dui_text.hpp" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="ui.cpp" />
-    <ClCompile Include="ui_common.cpp" />
-    <ClCompile Include="ui_measurement.cpp" />
-    <ClCompile Include="ui_calibration.cpp" />
+    <ClCompile Include="ui_view.cpp" />
     <ClCompile Include="WinMouseSensConverter.cpp" />
   </ItemGroup>
   <ItemGroup>
@@ -196,6 +204,7 @@
     <None Include="..\.editorconfig" />
     <None Include="..\AGENTS.md" />
     <None Include="..\README.md" />
+    <None Include="D2DUILIB\README.md" />
   </ItemGroup>
   <ItemGroup>
     <Text Include="..\LICENSE.txt" />

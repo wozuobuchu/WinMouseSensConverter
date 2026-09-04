@@ -16,6 +16,15 @@
     <Filter Include="头文件\SYS">
       <UniqueIdentifier>{db32cc98-700a-4a6e-8ec5-630276927f03}</UniqueIdentifier>
     </Filter>
+    <Filter Include="头文件\D2DUILIB">
+      <UniqueIdentifier>{8a07e4c9-994b-46b4-94d4-e8f0c740b5a6}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="头文件\D2DUILIB\D2DUILIB_INTERFACE">
+      <UniqueIdentifier>{6638DBF6-AC44-4FE7-82DE-986253F42B93}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="头文件\D2DUILIB\D2DUILIB_COMPONENT">
+      <UniqueIdentifier>{F4C7C071-FC78-4692-A61A-EF09BF2B218C}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="config.hpp">
@@ -36,8 +45,38 @@
     <ClInclude Include="ui.hpp">
       <Filter>头文件</Filter>
     </ClInclude>
-    <ClInclude Include="ui_internal.hpp">
+    <ClInclude Include="ui_view.hpp">
       <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="D2DUILIB\D2DUILIB_INTERFACE\d2dui.hpp">
+      <Filter>头文件\D2DUILIB\D2DUILIB_INTERFACE</Filter>
+    </ClInclude>
+    <ClInclude Include="D2DUILIB\D2DUILIB_INTERFACE\d2dui_component_base.hpp">
+      <Filter>头文件\D2DUILIB\D2DUILIB_INTERFACE</Filter>
+    </ClInclude>
+    <ClInclude Include="D2DUILIB\D2DUILIB_INTERFACE\d2dui_system_render.hpp">
+      <Filter>头文件\D2DUILIB\D2DUILIB_INTERFACE</Filter>
+    </ClInclude>
+    <ClInclude Include="D2DUILIB\D2DUILIB_COMPONENT\d2dui_labeled_value_grid.hpp">
+      <Filter>头文件\D2DUILIB\D2DUILIB_COMPONENT</Filter>
+    </ClInclude>
+    <ClInclude Include="D2DUILIB\D2DUILIB_COMPONENT\d2dui_line.hpp">
+      <Filter>头文件\D2DUILIB\D2DUILIB_COMPONENT</Filter>
+    </ClInclude>
+    <ClInclude Include="D2DUILIB\D2DUILIB_COMPONENT\d2dui_panel.hpp">
+      <Filter>头文件\D2DUILIB\D2DUILIB_COMPONENT</Filter>
+    </ClInclude>
+    <ClInclude Include="D2DUILIB\D2DUILIB_COMPONENT\d2dui_segmented_header.hpp">
+      <Filter>头文件\D2DUILIB\D2DUILIB_COMPONENT</Filter>
+    </ClInclude>
+    <ClInclude Include="D2DUILIB\D2DUILIB_COMPONENT\d2dui_status_bar.hpp">
+      <Filter>头文件\D2DUILIB\D2DUILIB_COMPONENT</Filter>
+    </ClInclude>
+    <ClInclude Include="D2DUILIB\D2DUILIB_COMPONENT\d2dui_switch.hpp">
+      <Filter>头文件\D2DUILIB\D2DUILIB_COMPONENT</Filter>
+    </ClInclude>
+    <ClInclude Include="D2DUILIB\D2DUILIB_COMPONENT\d2dui_text.hpp">
+      <Filter>头文件\D2DUILIB\D2DUILIB_COMPONENT</Filter>
     </ClInclude>
     <ClInclude Include="sync.hpp">
       <Filter>头文件</Filter>
@@ -65,13 +104,7 @@
     <ClCompile Include="ui.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
-    <ClCompile Include="ui_common.cpp">
-      <Filter>源文件</Filter>
-    </ClCompile>
-    <ClCompile Include="ui_measurement.cpp">
-      <Filter>源文件</Filter>
-    </ClCompile>
-    <ClCompile Include="ui_calibration.cpp">
+    <ClCompile Include="ui_view.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
     <ClCompile Include="WinMouseSensConverter.cpp">
@@ -108,6 +141,9 @@
     </None>
     <None Include="..\AGENTS.md">
       <Filter>源文件</Filter>
+    </None>
+    <None Include="D2DUILIB\README.md">
+      <Filter>头文件\D2DUILIB</Filter>
     </None>
   </ItemGroup>
   <ItemGroup>
