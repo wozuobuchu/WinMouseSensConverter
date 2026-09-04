@@ -9,7 +9,9 @@
 
 #include <algorithm>
 #include <memory>
+#include <new>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace d2dui {
@@ -83,9 +85,11 @@ namespace d2dui {
             dirty_ = true;
         }
 
-        void set_cell_text(size_t index, std::wstring text) {
-            if (cells_.at(index)->text() == text) return;
-            cells_.at(index)->set_text(std::move(text));
+        void set_cell_text(size_t index, std::wstring_view text) {
+            D2duiText& cell = *cells_.at(index);
+            const std::wstring& current = cell.text();
+            if (std::wstring_view(current.data(), current.size()) == text) return;
+            cell.set_text(std::wstring(text));
             dirty_ = true;
         }
 
@@ -102,50 +106,52 @@ namespace d2dui {
         }
 
         HRESULT arrange(D2duiContext& context) noexcept {
-            const float leading_width = 126.0f * scale_;
-            const D2D1_RECT_F leading_bounds = D2D1::RectF(
-                bounds_.left, bounds_.top + 2.0f * scale_, bounds_.left + leading_width, bounds_.bottom - 2.0f * scale_);
-            leading_panel_.resize(leading_bounds, scale_);
-            leading_text_.resize(leading_bounds, scale_);
-
-            std::vector<float> natural_widths;
             try {
-                natural_widths.resize(cells_.size());
-            } catch (...) {
-                return E_OUTOFMEMORY;
-            }
-            float natural_total = 0.0f;
-            const float padding = 12.0f * scale_;
-            for (size_t index = 0; index < cells_.size(); ++index) {
-                cells_[index]->set_style(default_style());
-                cells_[index]->resize(D2D1::RectF(0.0f, 0.0f, 4096.0f, 64.0f), scale_);
-                const HRESULT result = cells_[index]->prepare_layout(context);
-                if (FAILED(result)) return result;
-                natural_widths[index] = std::max(1.0f, cells_[index]->intrinsic_width()) + padding * 2.0f;
-                natural_total += natural_widths[index];
-            }
+                const float leading_width = 126.0f * scale_;
+                const D2D1_RECT_F leading_bounds = D2D1::RectF(
+                    bounds_.left, bounds_.top + 2.0f * scale_, bounds_.left + leading_width, bounds_.bottom - 2.0f * scale_);
+                leading_panel_.resize(leading_bounds, scale_);
+                leading_text_.resize(leading_bounds, scale_);
 
-            const float gap = 12.0f * scale_;
-            const float available = std::max(1.0f, bounds_.right - leading_bounds.right - gap);
-            const float fit = std::min(1.0f, available / std::max(1.0f, natural_total));
-            float x = bounds_.right - natural_total * fit;
-            const D2D1_RECT_F group_bounds = D2D1::RectF(x, leading_bounds.top, bounds_.right, leading_bounds.bottom);
-            group_panel_.resize(group_bounds, scale_);
-            for (size_t index = 0; index < cells_.size(); ++index) {
-                const float next_x = index + 1 == cells_.size() ? bounds_.right : x + natural_widths[index] * fit;
-                cells_[index]->set_style(default_style());
-                cells_[index]->resize(D2D1::RectF(x, group_bounds.top, next_x, group_bounds.bottom), scale_);
-                HRESULT result = cells_[index]->prepare_layout(context);
-                if (FAILED(result)) return result;
-                result = cells_[index]->apply_fit_scale(fit);
-                if (FAILED(result)) return result;
-                if (index > 0) {
-                    dividers_[index - 1]->resize(D2D1::RectF(x, group_bounds.top + 1.0f, x, group_bounds.bottom - 1.0f), scale_);
+                std::vector<float> natural_widths;
+                natural_widths.resize(cells_.size());
+                float natural_total = 0.0f;
+                const float padding = 12.0f * scale_;
+                for (size_t index = 0; index < cells_.size(); ++index) {
+                    cells_[index]->set_style(default_style());
+                    cells_[index]->resize(D2D1::RectF(0.0f, 0.0f, 4096.0f, 64.0f), scale_);
+                    const HRESULT result = cells_[index]->prepare_layout(context);
+                    if (FAILED(result)) return result;
+                    natural_widths[index] = std::max(1.0f, cells_[index]->intrinsic_width()) + padding * 2.0f;
+                    natural_total += natural_widths[index];
                 }
-                x = next_x;
+
+                const float gap = 12.0f * scale_;
+                const float available = std::max(1.0f, bounds_.right - leading_bounds.right - gap);
+                const float fit = std::min(1.0f, available / std::max(1.0f, natural_total));
+                float x = bounds_.right - natural_total * fit;
+                const D2D1_RECT_F group_bounds = D2D1::RectF(x, leading_bounds.top, bounds_.right, leading_bounds.bottom);
+                group_panel_.resize(group_bounds, scale_);
+                for (size_t index = 0; index < cells_.size(); ++index) {
+                    const float next_x = index + 1 == cells_.size() ? bounds_.right : x + natural_widths[index] * fit;
+                    cells_[index]->set_style(default_style());
+                    cells_[index]->resize(D2D1::RectF(x, group_bounds.top, next_x, group_bounds.bottom), scale_);
+                    HRESULT result = cells_[index]->prepare_layout(context);
+                    if (FAILED(result)) return result;
+                    result = cells_[index]->apply_fit_scale(fit);
+                    if (FAILED(result)) return result;
+                    if (index > 0) {
+                        dividers_[index - 1]->resize(D2D1::RectF(x, group_bounds.top + 1.0f, x, group_bounds.bottom - 1.0f), scale_);
+                    }
+                    x = next_x;
+                }
+                dirty_ = false;
+                return S_OK;
+            } catch (const std::bad_alloc&) {
+                return E_OUTOFMEMORY;
+            } catch (...) {
+                return E_FAIL;
             }
-            dirty_ = false;
-            return S_OK;
         }
 
         D2duiPanel leading_panel_;

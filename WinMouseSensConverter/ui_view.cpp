@@ -113,10 +113,33 @@ namespace ui::view {
         });
     }
 
+    HRESULT MainView::prepare_resources(d2dui::D2duiContext& context) noexcept {
+        try {
+            d2dui::D2duiTextStyle style{};
+            style.weight = DWRITE_FONT_WEIGHT_SEMI_BOLD;
+
+            IDWriteTextFormat* format = nullptr;
+            HRESULT result = context.get_text_format(style, &format);
+            if (FAILED(result)) return result;
+
+            style.text_alignment = DWRITE_TEXT_ALIGNMENT_LEADING;
+            result = context.get_text_format(style, &format);
+            if (FAILED(result)) return result;
+
+            style.text_alignment = DWRITE_TEXT_ALIGNMENT_CENTER;
+            style.font_size = 56.0f;
+            return context.get_text_format(style, &format);
+        } catch (const std::bad_alloc&) {
+            return E_OUTOFMEMORY;
+        } catch (...) {
+            return E_FAIL;
+        }
+    }
+
     HRESULT MainView::update_common(const PageLayout& layout, const ViewSnapshot& snapshot) {
         auto& status = status_bar_.get();
         status.resize(layout.footer_bounds, layout.scale);
-        status.set_badge_text(std::wstring(snapshot.recording_key_name));
+        status.set_badge_text(snapshot.recording_key_name);
         status.set_checked(snapshot.recording);
         return S_OK;
     }

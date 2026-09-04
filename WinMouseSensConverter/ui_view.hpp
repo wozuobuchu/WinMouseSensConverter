@@ -52,6 +52,7 @@ namespace ui::view {
         MainView(const MainView&) = delete;
         MainView& operator=(const MainView&) = delete;
 
+        HRESULT prepare_resources(d2dui::D2duiContext& context) noexcept;
         HRESULT render(d2dui::D2duiContext& context, const ViewSnapshot& snapshot) noexcept;
 
         [[nodiscard]] d2dui::D2duiSystemRender& common_render() noexcept { return common_render_; }

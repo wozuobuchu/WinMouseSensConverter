@@ -178,36 +178,28 @@ namespace d2dui {
                 }
             }
 
-            TextFormatEntry entry{};
             try {
+                TextFormatEntry entry{};
                 entry.style = style;
-            } catch (const std::bad_alloc&) {
-                return E_OUTOFMEMORY;
-            } catch (...) {
-                return E_FAIL;
-            }
-            HRESULT result = write_factory_->CreateTextFormat(
-                style.font_family.c_str(),
-                nullptr,
-                style.weight,
-                style.style,
-                style.stretch,
-                style.font_size,
-                style.locale.c_str(),
-                entry.format.GetAddressOf());
-            if (FAILED(result)) return result;
-            result = entry.format->SetTextAlignment(style.text_alignment);
-            if (SUCCEEDED(result)) result = entry.format->SetParagraphAlignment(style.paragraph_alignment);
-            if (SUCCEEDED(result)) result = entry.format->SetWordWrapping(style.wrapping);
-            if (FAILED(result)) return result;
-            *format = entry.format.Get();
-            try {
+                HRESULT result = write_factory_->CreateTextFormat(
+                    style.font_family.c_str(),
+                    nullptr,
+                    style.weight,
+                    style.style,
+                    style.stretch,
+                    style.font_size,
+                    style.locale.c_str(),
+                    entry.format.GetAddressOf());
+                if (FAILED(result)) return result;
+                result = entry.format->SetTextAlignment(style.text_alignment);
+                if (SUCCEEDED(result)) result = entry.format->SetParagraphAlignment(style.paragraph_alignment);
+                if (SUCCEEDED(result)) result = entry.format->SetWordWrapping(style.wrapping);
+                if (FAILED(result)) return result;
                 text_formats_.push_back(std::move(entry));
+                *format = text_formats_.back().format.Get();
             } catch (const std::bad_alloc&) {
-                *format = nullptr;
                 return E_OUTOFMEMORY;
             } catch (...) {
-                *format = nullptr;
                 return E_FAIL;
             }
             return S_OK;

@@ -8,7 +8,9 @@
 
 #include <algorithm>
 #include <memory>
+#include <new>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace d2dui {
@@ -29,7 +31,10 @@ namespace d2dui {
 
         HRESULT draw(D2duiContext& context) noexcept override {
             if (items_.empty()) return E_UNEXPECTED;
-            if (dirty_) arrange();
+            if (dirty_) {
+                const HRESULT arrange_result = arrange();
+                if (FAILED(arrange_result)) return arrange_result;
+            }
             HRESULT result = S_OK;
             float shared_fit = 1.0f;
             for (const auto& item : items_) {
@@ -81,9 +86,12 @@ namespace d2dui {
         [[nodiscard]] D2duiText& value_component(size_t index) { return items_.at(index)->value; }
 
         void set_label(size_t index, std::wstring text) { items_.at(index)->label.set_text(std::move(text)); }
-        void set_value(size_t index, std::wstring text, UINT32 suffix_start = D2duiText::no_suffix) {
+        void set_value(size_t index, std::wstring_view text, UINT32 suffix_start = D2duiText::no_suffix) {
             Item& item = *items_.at(index);
-            item.value.set_text(std::move(text));
+            const std::wstring& current = item.value.text();
+            if (std::wstring_view(current.data(), current.size()) != text) {
+                item.value.set_text(std::wstring(text));
+            }
             item.value.set_suffix(suffix_start, 18.0f);
         }
 
@@ -119,27 +127,34 @@ namespace d2dui {
             item.value.set_fit_to_bounds(true);
         }
 
-        void arrange() {
-            const float gap = 16.0f * scale_;
-            const float padding = 22.0f * scale_;
-            const float label_height = (items_.size() == 1 ? 38.0f : 34.0f) * scale_;
-            const float total_gap = gap * static_cast<float>(items_.size() - 1);
-            const float card_width = std::max(1.0f, (bounds_.right - bounds_.left - total_gap) / static_cast<float>(items_.size()));
-            for (size_t index = 0; index < items_.size(); ++index) {
-                const float left = bounds_.left + static_cast<float>(index) * (card_width + gap);
-                const float right = index + 1 == items_.size() ? bounds_.right : left + card_width;
-                const D2D1_RECT_F card = D2D1::RectF(left, bounds_.top, right, bounds_.bottom);
-                items_[index]->panel.resize(card, scale_);
-                items_[index]->label.set_style(label_style());
-                items_[index]->label.resize(D2D1::RectF(
-                    left + padding, bounds_.top + padding, right - padding, bounds_.top + padding + label_height), scale_);
-                items_[index]->value.set_style(value_style());
-                items_[index]->value.set_font_scale(scale_);
-                items_[index]->value.set_suffix(items_[index]->value.suffix_start(), 18.0f);
-                items_[index]->value.resize(D2D1::RectF(
-                    left + padding, bounds_.top + padding + label_height, right - padding, bounds_.bottom - padding), scale_);
+        HRESULT arrange() noexcept {
+            try {
+                const float gap = 16.0f * scale_;
+                const float padding = 22.0f * scale_;
+                const float label_height = (items_.size() == 1 ? 38.0f : 34.0f) * scale_;
+                const float total_gap = gap * static_cast<float>(items_.size() - 1);
+                const float card_width = std::max(1.0f, (bounds_.right - bounds_.left - total_gap) / static_cast<float>(items_.size()));
+                for (size_t index = 0; index < items_.size(); ++index) {
+                    const float left = bounds_.left + static_cast<float>(index) * (card_width + gap);
+                    const float right = index + 1 == items_.size() ? bounds_.right : left + card_width;
+                    const D2D1_RECT_F card = D2D1::RectF(left, bounds_.top, right, bounds_.bottom);
+                    items_[index]->panel.resize(card, scale_);
+                    items_[index]->label.set_style(label_style());
+                    items_[index]->label.resize(D2D1::RectF(
+                        left + padding, bounds_.top + padding, right - padding, bounds_.top + padding + label_height), scale_);
+                    items_[index]->value.set_style(value_style());
+                    items_[index]->value.set_font_scale(scale_);
+                    items_[index]->value.set_suffix(items_[index]->value.suffix_start(), 18.0f);
+                    items_[index]->value.resize(D2D1::RectF(
+                        left + padding, bounds_.top + padding + label_height, right - padding, bounds_.bottom - padding), scale_);
+                }
+                dirty_ = false;
+                return S_OK;
+            } catch (const std::bad_alloc&) {
+                return E_OUTOFMEMORY;
+            } catch (...) {
+                return E_FAIL;
             }
-            dirty_ = false;
         }
 
         std::vector<std::unique_ptr<Item>> items_;

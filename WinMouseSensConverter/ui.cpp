@@ -966,6 +966,12 @@ namespace ui {
                 return nullptr;
             }
 
+            if (FAILED(state->main_view.prepare_resources(state->d2dui_context))) {
+                show_startup_rendering_error();
+                DestroyWindow(hwnd);
+                return nullptr;
+            }
+
             if (!SetMenu(hwnd, state->root_menu)) {
                 DestroyWindow(hwnd);
                 return nullptr;

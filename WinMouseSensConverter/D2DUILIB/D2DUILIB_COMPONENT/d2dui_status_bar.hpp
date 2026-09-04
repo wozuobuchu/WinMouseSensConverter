@@ -8,7 +8,9 @@
 #include "d2dui_text.hpp"
 
 #include <algorithm>
+#include <new>
 #include <string>
+#include <string_view>
 
 namespace d2dui {
 
@@ -53,9 +55,10 @@ namespace d2dui {
         }
 
         void on_click() noexcept override { if (enabled_) toggle_.on_click(); }
-        void set_badge_text(std::wstring text) {
-            if (badge_text_.text() == text) return;
-            badge_text_.set_text(std::move(text));
+        void set_badge_text(std::wstring_view text) {
+            const std::wstring& current = badge_text_.text();
+            if (std::wstring_view(current.data(), current.size()) == text) return;
+            badge_text_.set_text(std::wstring(text));
             dirty_ = true;
         }
         void set_label_text(std::wstring text) { label_text_.set_text(std::move(text)); }
@@ -76,34 +79,40 @@ namespace d2dui {
         }
 
         HRESULT arrange(D2duiContext& context) noexcept {
-            panel_.resize(bounds_, scale_);
-            badge_text_.set_style(center_style());
-            badge_text_.resize(D2D1::RectF(0.0f, 0.0f, 512.0f, 34.0f), scale_);
-            HRESULT result = badge_text_.prepare_layout(context);
-            if (FAILED(result)) return result;
+            try {
+                panel_.resize(bounds_, scale_);
+                badge_text_.set_style(center_style());
+                badge_text_.resize(D2D1::RectF(0.0f, 0.0f, 512.0f, 34.0f), scale_);
+                HRESULT result = badge_text_.prepare_layout(context);
+                if (FAILED(result)) return result;
 
-            const float footer_height = bounds_.bottom - bounds_.top;
-            const float padding = 16.0f * scale_;
-            const float badge_height = 34.0f * scale_;
-            const float badge_top = bounds_.top + (footer_height - badge_height) * 0.5f;
-            const float badge_width = std::max(48.0f, badge_text_.intrinsic_width() + 24.0f);
-            const D2D1_RECT_F badge_bounds = D2D1::RectF(
-                bounds_.left + padding, badge_top, bounds_.left + padding + badge_width, badge_top + badge_height);
-            badge_.resize(badge_bounds, scale_);
-            badge_text_.resize(badge_bounds, scale_);
+                const float footer_height = bounds_.bottom - bounds_.top;
+                const float padding = 16.0f * scale_;
+                const float badge_height = 34.0f * scale_;
+                const float badge_top = bounds_.top + (footer_height - badge_height) * 0.5f;
+                const float badge_width = std::max(48.0f, badge_text_.intrinsic_width() + 24.0f);
+                const D2D1_RECT_F badge_bounds = D2D1::RectF(
+                    bounds_.left + padding, badge_top, bounds_.left + padding + badge_width, badge_top + badge_height);
+                badge_.resize(badge_bounds, scale_);
+                badge_text_.resize(badge_bounds, scale_);
 
-            const float switch_width = 44.0f * scale_;
-            const float switch_height = 24.0f * scale_;
-            const float switch_right = bounds_.right - padding;
-            const float switch_top = bounds_.top + (footer_height - switch_height) * 0.5f;
-            const D2D1_RECT_F switch_bounds = D2D1::RectF(
-                switch_right - switch_width, switch_top, switch_right, switch_top + switch_height);
-            toggle_.resize(switch_bounds, scale_);
-            label_text_.set_style(leading_style());
-            label_text_.resize(D2D1::RectF(
-                badge_bounds.right + 14.0f * scale_, bounds_.top, switch_bounds.left - 16.0f * scale_, bounds_.bottom), scale_);
-            dirty_ = false;
-            return S_OK;
+                const float switch_width = 44.0f * scale_;
+                const float switch_height = 24.0f * scale_;
+                const float switch_right = bounds_.right - padding;
+                const float switch_top = bounds_.top + (footer_height - switch_height) * 0.5f;
+                const D2D1_RECT_F switch_bounds = D2D1::RectF(
+                    switch_right - switch_width, switch_top, switch_right, switch_top + switch_height);
+                toggle_.resize(switch_bounds, scale_);
+                label_text_.set_style(leading_style());
+                label_text_.resize(D2D1::RectF(
+                    badge_bounds.right + 14.0f * scale_, bounds_.top, switch_bounds.left - 16.0f * scale_, bounds_.bottom), scale_);
+                dirty_ = false;
+                return S_OK;
+            } catch (const std::bad_alloc&) {
+                return E_OUTOFMEMORY;
+            } catch (...) {
+                return E_FAIL;
+            }
         }
 
         D2duiPanel panel_;

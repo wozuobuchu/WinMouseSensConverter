@@ -137,6 +137,11 @@ namespace automatic_test {
             TEST_EXPECT(runner, view.common_render().size() == 1);
             TEST_EXPECT(runner, view.measurement_render().size() == 2);
             TEST_EXPECT(runner, view.calibration_render().size() == 2);
+            TEST_EXPECT(runner, !fixture.context.in_frame());
+            TEST_EXPECT(runner, SUCCEEDED(view.prepare_resources(fixture.context)));
+            TEST_EXPECT(runner, !fixture.context.in_frame());
+            TEST_EXPECT(runner, fixture.context.text_format_cache_size() == 3);
+            const size_t prepared_format_count = fixture.context.text_format_cache_size();
 
             ui::view::ViewSnapshot snapshot{};
             snapshot.recording_key_name = L"F2";
@@ -144,6 +149,7 @@ namespace automatic_test {
             snapshot.accumulated_dx = 800.0;
             TEST_EXPECT(runner, view.calibration_grid().value_component(0).layout() == nullptr);
             TEST_EXPECT(runner, SUCCEEDED(view.render(fixture.context, snapshot)));
+            TEST_EXPECT(runner, fixture.context.text_format_cache_size() == prepared_format_count);
             IDWriteTextLayout* measurement_layout = view.measurement_grid().value_component(0).layout();
             TEST_EXPECT(runner, measurement_layout != nullptr);
             TEST_EXPECT(runner, view.calibration_grid().value_component(0).layout() == nullptr);
@@ -153,7 +159,31 @@ namespace automatic_test {
             snapshot.accumulated_dx = 3.0;
             snapshot.accumulated_dy = 4.0;
             TEST_EXPECT(runner, SUCCEEDED(view.render(fixture.context, snapshot)));
+            TEST_EXPECT(runner, fixture.context.text_format_cache_size() == prepared_format_count);
             TEST_EXPECT(runner, view.calibration_grid().value_component(0).layout() != nullptr);
+            TEST_EXPECT(runner, !fixture.context.in_frame());
+        });
+
+        runner.run("resource preparation and invalid styles return without a frame", [&] {
+            d2dui::D2duiContext uninitialized_context;
+            ui::view::MainView view;
+            TEST_EXPECT(runner, view.prepare_resources(uninitialized_context) == E_INVALIDARG);
+            TEST_EXPECT(runner, !uninitialized_context.in_frame());
+
+            WindowFixture fixture;
+            d2dui::D2duiTextStyle invalid_style{};
+            invalid_style.font_family.clear();
+            IDWriteTextFormat* format = reinterpret_cast<IDWriteTextFormat*>(1);
+            TEST_EXPECT(runner, fixture.context.get_text_format(invalid_style, &format) == E_INVALIDARG);
+            TEST_EXPECT(runner, format == nullptr);
+            TEST_EXPECT(runner, !fixture.context.in_frame());
+
+            TEST_EXPECT(runner, fixture.context.begin_frame({0xFFFFFF, 1.0f}) == S_OK);
+            d2dui::D2duiText text(L"invalid", invalid_style);
+            text.resize(D2D1::RectF(0.0f, 0.0f, 100.0f, 40.0f), 1.0f);
+            TEST_EXPECT(runner, text.draw(fixture.context) == E_INVALIDARG);
+            TEST_EXPECT(runner, fixture.context.in_frame());
+            TEST_EXPECT(runner, SUCCEEDED(fixture.context.end_frame()));
             TEST_EXPECT(runner, !fixture.context.in_frame());
         });
 
@@ -206,6 +236,18 @@ namespace automatic_test {
             TEST_EXPECT(runner, first_size < 56.0f);
             TEST_EXPECT(runner, grid.item_bounds(0).right < grid.item_bounds(1).left);
             TEST_EXPECT_NEAR(runner, grid.item_bounds(1).left - grid.item_bounds(0).right, 16.0f, 0.001f);
+
+            IDWriteTextLayout* unchanged_layout = grid.value_component(1).layout();
+            grid.set_value(1, L"-1.235e+12");
+            TEST_EXPECT(runner, SUCCEEDED(grid.draw(fixture.context)));
+            TEST_EXPECT(runner, grid.value_component(1).layout() == unchanged_layout);
+
+            grid.set_value(1, L"-1.235e+12", 2);
+            TEST_EXPECT(runner, SUCCEEDED(grid.draw(fixture.context)));
+            TEST_EXPECT(runner, grid.value_component(1).layout() != unchanged_layout);
+            float suffix_size = 0.0f;
+            TEST_EXPECT(runner, SUCCEEDED(grid.value_component(1).layout()->GetFontSize(2, &suffix_size)));
+            TEST_EXPECT(runner, suffix_size < second_size);
             TEST_EXPECT(runner, SUCCEEDED(fixture.context.end_frame()));
         });
 
