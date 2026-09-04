@@ -2,12 +2,27 @@
 
 #include "recording_key.hpp"
 #include "ui_internal.hpp"
+#include "SYS/cursor_pos.hpp"
 
 #include <array>
+#include <limits>
 
 namespace automatic_test {
 
     void add_core_logic_tests(TestRunner& runner) {
+        runner.run("cursor hit testing uses half-open Direct2D rectangles", [&] {
+            constexpr D2D1_RECT_F rect{-10.0f, -20.0f, 30.0f, 40.0f};
+
+            TEST_EXPECT(runner, cursor_pos::is_in_rect(D2D1_POINT_2F{-10.0f, -20.0f}, rect));
+            TEST_EXPECT(runner, cursor_pos::is_in_rect(D2D1_POINT_2F{0.0f, 0.0f}, rect));
+            TEST_EXPECT(runner, !cursor_pos::is_in_rect(D2D1_POINT_2F{30.0f, 0.0f}, rect));
+            TEST_EXPECT(runner, !cursor_pos::is_in_rect(D2D1_POINT_2F{0.0f, 40.0f}, rect));
+            TEST_EXPECT(runner, !cursor_pos::is_in_rect(D2D1_POINT_2F{-10.01f, 0.0f}, rect));
+            TEST_EXPECT(runner, !cursor_pos::is_in_rect(D2D1_POINT_2F{0.0f, -20.01f}, rect));
+            TEST_EXPECT(runner, !cursor_pos::is_in_rect(D2D1_POINT_2F{30.01f, 0.0f}, rect));
+            TEST_EXPECT(runner, !cursor_pos::is_in_rect(D2D1_POINT_2F{0.0f, 40.01f}, rect));
+        });
+
         runner.run("distance conversion covers all units", [&] {
             constexpr double raw_count = 800.0;
             constexpr int reference_dpi = 800;

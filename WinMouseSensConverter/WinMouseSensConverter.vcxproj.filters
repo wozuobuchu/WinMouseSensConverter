@@ -45,6 +45,9 @@
     <ClInclude Include="SYS\aop.hpp">
       <Filter>头文件\SYS</Filter>
     </ClInclude>
+    <ClInclude Include="SYS\cursor_pos.hpp">
+      <Filter>头文件\SYS</Filter>
+    </ClInclude>
     <ClInclude Include="SYS\fps.hpp">
       <Filter>头文件\SYS</Filter>
     </ClInclude>
