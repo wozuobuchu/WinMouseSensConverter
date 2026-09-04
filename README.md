@@ -50,7 +50,7 @@ Use **Mode → Calibration** to derive effective DPI from one known ruler distan
 
 1. Place a ruler beside the mouse and choose a long, straight section of the pad. Prefer `20 cm` or `50 cm` when space allows.
 2. Choose **Mode → Calibration**.
-3. Choose **Options → Calibration Distance → 10 cm / 20 cm / 50 cm**, or select **Custom...** and enter an integer from `10` through `1000`. Custom calibration input is always in centimeters.
+3. Choose **Options → Calibration Distance → 10 cm / 20 cm / 50 cm**, or select **Custom...** and enter a value from `10` through `1000`. Decimal and `e`/`E` notation are accepted, and custom calibration input is always in centimeters.
 4. Keep the mouse stationary, press the displayed recording key, and wait for the start sound.
 5. Move the mouse once in a straight line by exactly the selected ruler distance. Do not lift, rotate, overshoot, reverse, or correct it.
 6. Stop at the ruler mark, keep the mouse stationary, and press the recording key again. The calibrated DPI remains visible.
@@ -70,7 +70,7 @@ calibrated DPI = counts / known distance in inches
 The Calibration header shows `CALDIS` in the selected Unit. A physical unit displays the configured ruler distance converted to that unit; `raw` displays the counts predicted by the current Reference DPI for that ruler distance. The captured movement distance is not displayed separately.
 
 > [!NOTE]
-> Reference DPI and Unit do not enter the calibrated-DPI formula, and calibration never overwrites Reference DPI. To use the result for later physical-distance conversion, enter a suitable integer under **Options → Reference DPI → Custom...**.
+> Reference DPI and Unit do not enter the calibrated-DPI formula, and calibration never overwrites Reference DPI. To use the result for later physical-distance conversion, enter a suitable value under **Options → Reference DPI → Custom...**.
 
 Switching between Measurement and Calibration preserves the active recording state and accumulated X/Y values. It does not stop or clear the current session.
 
@@ -93,7 +93,7 @@ The application captures raw X/Y counts in the background. Horizontal X is norma
 - Separate Measurement and Calibration renderers sharing one recording session.
 - DPI calibration from a known `10`–`1000 cm` distance using the final net X/Y vector.
 - Output in raw counts, inches, millimeters, centimeters, decimeters, or meters.
-- Reference DPI presets: `100`, `400`, `800`, `1200`, `1600`, `3200`, and `10000`, plus modeless custom input from `1` to `999999`.
+- Reference DPI presets: `100`, `400`, `800`, `1200`, `1600`, `3200`, and `10000`, plus modeless decimal custom input from `1` to `999999`.
 - Recording-key presets: `R`, `T`, `F2`, `F5`, `COMMA`, and `PERIOD`, plus modeless custom Windows Virtual-Key input from `1` to `254`.
 - Per-user persistence for mode, Reference DPI, unit, calibration distance, and recording key.
 - Responsive Per-Monitor-V2-DPI-aware Direct2D/DirectWrite interface.
@@ -107,9 +107,9 @@ The application captures raw X/Y counts in the background. Horizontal X is norma
 | Setting | Available values | Default | Effect |
 | --- | --- | --- | --- |
 | Mode | Measurement, Calibration | Measurement | Selects the renderer and interpretation of the accumulated X/Y values. |
-| Reference DPI | `100`, `400`, `800`, `1200`, `1600`, `3200`, `10000`, or Custom `1`–`999999` | `800` | Converts raw counts to physical units; does not affect calibrated DPI. |
+| Reference DPI | `100`, `400`, `800`, `1200`, `1600`, `3200`, `10000`, or decimal Custom `1`–`999999` | `800` | Converts raw counts to physical units; does not affect calibrated DPI. |
 | Unit | `raw`, `inch`, `mm`, `cm`, `dm`, `m` | `cm` | Controls displayed measurement distances and the `CALDIS` header. |
-| Calibration Distance | `10`, `20`, `50 cm`, or Custom `10`–`1000 cm` | `10 cm` | Supplies the known ruler distance for calibration. |
+| Calibration Distance | `10`, `20`, `50 cm`, or decimal Custom `10`–`1000 cm` | `10 cm` | Supplies the known ruler distance for calibration. |
 | Recording Key | `R`, `T`, `F2`, `F5`, `COMMA`, `PERIOD`, or Custom VK `1`–`254` | `F2` | Toggles recording on a matching keyboard or physical mouse-button Raw Input key-down transition. |
 
 Invalid custom input keeps the last valid value active. Custom windows are modeless, so the main window and input thread continue running while they are open.
@@ -139,8 +139,9 @@ recording_key = 0x71
 
 - Valid units are `raw`, `inch`, `mm`, `cm`, `dm`, and `m`.
 - Valid modes are `measurement` and `calibration`.
-- `reference_dpi` is a decimal integer from `1` through `999999`.
-- `calibration_distance_cm` is a decimal integer from `10` through `1000`.
+- `reference_dpi` is a finite decimal value from `1` through `999999`.
+- `calibration_distance_cm` is a finite decimal value from `10` through `1000`.
+- Both values use `.` as the decimal separator and accept `e`/`E` notation such as `800.25`, `8e2`, or `8E+2`. Their value text is limited to 24 characters; commas, leading `+`, trailing characters, `NaN`, and infinity are invalid.
 - Blank lines and spaces or tabs around lines, keys, `=`, and values are accepted; CRLF and LF line endings are supported.
 - Key names and enum values are case-sensitive. Unknown fields are ignored.
 
@@ -149,6 +150,8 @@ recording_key = 0x71
 Selecting a custom calibration distance keeps **Custom...** checked for the rest of the run, even when the value is `10`, `20`, or `50`. Only the number is saved; those three values map back to presets at the next startup. Custom recording keys behave the same way: Custom remains checked for the run, while saved preset values map back to their preset command after restart. Existing valid configurations, including `F1`, remain valid.
 
 Custom Reference DPI follows the same runtime rule: a successful custom submission keeps **Custom...** checked even when the number matches a DPI preset. At the next startup, saved preset numbers map back to their preset commands and all other valid values map to Custom.
+
+Reference DPI and Calibration Distance are saved with a locale-independent shortest representation that round-trips to the same `double`. Integer values remain compact (`800`, `10`); scientific-notation input may be normalized to ordinary decimal notation, so its original spelling is not preserved.
 
 > [!IMPORTANT]
 > Every documented field is required. A missing, unreadable, oversized, incomplete, duplicated, malformed, or invalid configuration restores **all** defaults (`800`, `cm`, `10 cm`, Measurement, `F2`) and triggers an attempt to replace the file. Older files without `calibration_distance_cm` or `mode` therefore reset in full. Configuration failures never prevent startup.
@@ -488,7 +491,7 @@ WinMouseSensConverter 提供两种使用流程。请先按目标选择对应模�
 
 1. 把尺子放在鼠标旁，在鼠标垫上选择尽可能长且笔直的区域；空间允许时优先使用 `20 cm` 或 `50 cm`。
 2. 选择 **Mode → Calibration**。
-3. 选择 **Options → Calibration Distance → 10 cm / 20 cm / 50 cm**，或选择 **Custom...** 并输入 `10`～`1000` 的整数。自定义定标距离始终以厘米为单位。
+3. 选择 **Options → Calibration Distance → 10 cm / 20 cm / 50 cm**，或选择 **Custom...** 并输入 `10`～`1000` 的数值。支持小数及 `e`/`E` 计数法，自定义定标距离始终以厘米为单位。
 4. 保持鼠标静止，按下界面显示的录制键，等待开始提示音。
 5. 沿直线一次性移动恰好等于所选尺子距离；不要抬鼠、旋转、越过终点、反向或回调修正。
 6. 到达尺子刻度后保持静止，再次按下录制键；最终定标 DPI 会保留在界面中。
@@ -508,7 +511,7 @@ counts = sqrt(dx² + dy²)
 Calibration 顶部的 `CALDIS` 使用当前 Unit 显示目标定标距离：物理单位下显示尺子距离的对应换算值，`raw` 下显示当前 Reference DPI 对该距离预测的等效 counts。界面不会单独显示采集到的实测距离。
 
 > [!NOTE]
-> Reference DPI 和 Unit 都不参与定标 DPI 公式，定标结果也不会覆盖 Reference DPI。如需用定标结果进行后续物理距离换算，请在 **Options → Reference DPI → Custom...** 中手工输入合适的整数。
+> Reference DPI 和 Unit 都不参与定标 DPI 公式，定标结果也不会覆盖 Reference DPI。如需用定标结果进行后续物理距离换算，请在 **Options → Reference DPI → Custom...** 中手工输入合适的数值。
 
 在 Measurement 与 Calibration 之间切换会保留当前录制状态和累计 X/Y 值，不会停止或清除当前记录。
 
@@ -531,7 +534,7 @@ WinMouseSensConverter 测量鼠标在游戏视角完成已知水平旋转角度�
 - Measurement 与 Calibration 使用隔离的渲染器，但共享同一录制会话。
 - 根据 `10`～`1000 cm` 已知距离和最终 X/Y 净向量定标 DPI。
 - 支持 raw counts、英寸、毫米、厘米、分米和米。
-- Reference DPI 预设为 `100`、`400`、`800`、`1200`、`1600`、`3200`、`10000`，并提供 `1`～`999999` 的非模态自定义输入。
+- Reference DPI 预设为 `100`、`400`、`800`、`1200`、`1600`、`3200`、`10000`，并提供 `1`～`999999` 的非模态小数自定义输入。
 - 录制键预设为 `R`、`T`、`F2`、`F5`、`COMMA`、`PERIOD`，并提供 `1`～`254` 的 Windows Virtual-Key 非模态自定义输入。
 - 按用户保存模式、Reference DPI、单位、定标距离和录制键。
 - 基于 Direct2D/DirectWrite 的响应式 Per-Monitor V2 DPI 感知界面。
@@ -545,9 +548,9 @@ WinMouseSensConverter 测量鼠标在游戏视角完成已知水平旋转角度�
 | 设置 | 可选值 | 默认值 | 作用 |
 | --- | --- | --- | --- |
 | Mode | Measurement、Calibration | Measurement | 选择渲染器和累计 X/Y 值的解释方式。 |
-| Reference DPI | `100`、`400`、`800`、`1200`、`1600`、`3200`、`10000`，或 Custom `1`～`999999` | `800` | 将 raw counts 换算成物理单位；不影响定标 DPI。 |
+| Reference DPI | `100`、`400`、`800`、`1200`、`1600`、`3200`、`10000`，或小数 Custom `1`～`999999` | `800` | 将 raw counts 换算成物理单位；不影响定标 DPI。 |
 | Unit | `raw`、`inch`、`mm`、`cm`、`dm`、`m` | `cm` | 控制测量距离和 `CALDIS` 顶部字段的显示单位。 |
-| Calibration Distance | `10`、`20`、`50 cm`，或 Custom `10`～`1000 cm` | `10 cm` | 为定标公式提供已知尺子距离。 |
+| Calibration Distance | `10`、`20`、`50 cm`，或小数 Custom `10`～`1000 cm` | `10 cm` | 为定标公式提供已知尺子距离。 |
 | Recording Key | `R`、`T`、`F2`、`F5`、`COMMA`、`PERIOD`，或 Custom VK `1`～`254` | `F2` | 在收到匹配的键盘或物理鼠标按键 Raw Input 按下状态变化时切换录制。 |
 
 自定义输入无效时会保留最后一个合法值。自定义窗口是非模态的，打开期间主窗口和输入线程仍继续运行。
@@ -577,8 +580,9 @@ recording_key = 0x71
 
 - 合法单位为 `raw`、`inch`、`mm`、`cm`、`dm`、`m`。
 - 合法模式为 `measurement` 和 `calibration`。
-- `reference_dpi` 是 `1`～`999999` 的十进制整数。
-- `calibration_distance_cm` 是 `10`～`1000` 的十进制整数。
+- `reference_dpi` 是 `1`～`999999` 的有限十进制数值。
+- `calibration_distance_cm` 是 `10`～`1000` 的有限十进制数值。
+- 两个数值都使用 `.` 作为小数点，并支持 `800.25`、`8e2`、`8E+2` 等 `e`/`E` 计数法。数值文本最多 24 个字符；逗号、前导 `+`、尾随字符、`NaN` 和无穷大均无效。
 - 允许空行，以及行、键、`=`、值两侧的空格或制表符；支持 CRLF 和 LF 换行。
 - 键名和枚举值区分大小写；未知字段会被忽略。
 
@@ -587,6 +591,8 @@ recording_key = 0x71
 选择自定义定标距离后，即使输入 `10`、`20` 或 `50`，本次运行也会保持 **Custom...** 选中；保存时只写数值，下次启动时这三个值会重新映射到预设。自定义录制键采用同样规则：本次运行保持 Custom，重启后已保存的预设值重新映射到预设命令。现有合法配置（包括 `F1`）仍然有效。
 
 自定义 Reference DPI 也遵循同样的本次运行规则：成功提交后即使数值与 DPI 预设相同，也会保持 **Custom...** 选中。下次启动时，已保存的预设数值重新映射到预设命令，其他合法值映射到 Custom。
+
+Reference DPI 和 Calibration Distance 使用与区域设置无关、可精确往返为同一 `double` 的最短形式保存。整数仍保持简洁形式（如 `800`、`10`）；科学计数法输入可能规范化为普通十进制，因此不保留原始拼写。
 
 > [!IMPORTANT]
 > 每个已记录字段都是必填项。文件缺失、无法读取、超过大小限制、字段不完整或重复、行格式错误、值无效时，程序都会恢复**全部**默认值（`800`、`cm`、`10 cm`、Measurement、`F2`），并尝试替换配置文件。因此，缺少 `calibration_distance_cm` 或 `mode` 的旧配置会整体重置。配置失败不会阻止程序启动。

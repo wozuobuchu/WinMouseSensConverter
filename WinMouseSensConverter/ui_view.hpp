@@ -23,9 +23,9 @@ namespace ui::view {
         bool recording = false;
         double accumulated_dx = 0.0;
         double accumulated_dy = 0.0;
-        int reference_dpi = 800;
+        double reference_dpi = 800.0;
         Unit unit = Unit::cm;
-        int calibration_distance_cm = 10;
+        double calibration_distance_cm = 10.0;
         std::wstring_view recording_key_name = L"F2";
     };
 
@@ -38,12 +38,12 @@ namespace ui::view {
     };
 
     const wchar_t* unit_name(Unit unit) noexcept;
-    double convert_distance(double raw_count, int reference_dpi, Unit unit) noexcept;
-    double calibration_dpi_from_counts(double counts, int calibration_distance_cm) noexcept;
+    double convert_distance(double raw_count, double reference_dpi, Unit unit) noexcept;
+    double calibration_dpi_from_counts(double counts, double calibration_distance_cm) noexcept;
     PageLayout calculate_page_layout(float width, float height) noexcept;
-    int format_distance_value(double raw_count, int reference_dpi, Unit unit, wchar_t* text, size_t capacity) noexcept;
-    int format_reference_dpi_cell(int reference_dpi, wchar_t* text, size_t capacity) noexcept;
-    int format_calibration_distance_cell(int calibration_distance_cm, int reference_dpi, Unit unit, wchar_t* text, size_t capacity) noexcept;
+    int format_distance_value(double raw_count, double reference_dpi, Unit unit, wchar_t* text, size_t capacity) noexcept;
+    int format_reference_dpi_cell(double reference_dpi, wchar_t* text, size_t capacity) noexcept;
+    int format_calibration_distance_cell(double calibration_distance_cm, double reference_dpi, Unit unit, wchar_t* text, size_t capacity) noexcept;
     int format_unit_cell(Unit unit, wchar_t* text, size_t capacity) noexcept;
 
     class MainView final {

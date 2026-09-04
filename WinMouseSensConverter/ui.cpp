@@ -364,14 +364,14 @@ namespace {
         CheckMenuRadioItem(root_menu, kCommandRecordingKeyFirst, kCommandRecordingKeyLast, state.recording_key_command, MF_BYCOMMAND);
     }
 
-    UINT dpi_command_for_value(int reference_dpi) noexcept {
+    UINT dpi_command_for_value(double reference_dpi) noexcept {
         for (const DpiMenuEntry& entry : kDpiMenuEntries) {
             if (entry.dpi == reference_dpi) return entry.command;
         }
         return kCommandDpiCustom;
     }
 
-    UINT calibration_distance_command_for_value(int distance_cm) noexcept {
+    UINT calibration_distance_command_for_value(double distance_cm) noexcept {
         for (const CalibrationDistanceMenuEntry& entry : kCalibrationDistanceMenuEntries) {
             if (entry.distance_cm == distance_cm) return entry.command;
         }
@@ -500,26 +500,37 @@ namespace {
     constexpr CustomInputSpec custom_input_spec(CustomInputKind kind) noexcept {
         switch (kind) {
             case CustomInputKind::reference_dpi:
-                return {IDC_CUSTOM_DPI_VALUE, 7, &UiState::custom_dpi_dialog};
+                return {IDC_CUSTOM_DPI_VALUE, config::detail::kMaximumFloatingPointTextLength, &UiState::custom_dpi_dialog};
             case CustomInputKind::calibration_distance:
-                return {IDC_CUSTOM_CALIBRATION_DISTANCE_VALUE, 4, &UiState::custom_calibration_distance_dialog};
+                return {IDC_CUSTOM_CALIBRATION_DISTANCE_VALUE, config::detail::kMaximumFloatingPointTextLength, &UiState::custom_calibration_distance_dialog};
             case CustomInputKind::recording_key:
                 return {IDC_CUSTOM_RECORDING_KEY_VALUE, 4, &UiState::custom_recording_key_dialog};
         }
-        return {IDC_CUSTOM_DPI_VALUE, 7, &UiState::custom_dpi_dialog};
+        return {IDC_CUSTOM_DPI_VALUE, config::detail::kMaximumFloatingPointTextLength, &UiState::custom_dpi_dialog};
     }
 
-    UINT custom_input_initial_value(const UiState& state, CustomInputKind kind) noexcept {
-        if (state.user_config == nullptr) return 0;
+    bool set_custom_input_initial_value(HWND dialog, const UiState& state, CustomInputKind kind, int edit_control_id) noexcept {
+        if (state.user_config == nullptr) return false;
+        if (kind == CustomInputKind::recording_key) return SetDlgItemInt(dialog, edit_control_id, state.user_config->recording_key, FALSE) != FALSE;
+
+        double value = 0.0;
         switch (kind) {
             case CustomInputKind::reference_dpi:
-                return static_cast<UINT>(state.user_config->reference_dpi);
+                value = state.user_config->reference_dpi;
+                break;
             case CustomInputKind::calibration_distance:
-                return static_cast<UINT>(state.user_config->calibration_distance_cm);
+                value = state.user_config->calibration_distance_cm;
+                break;
             case CustomInputKind::recording_key:
-                return static_cast<UINT>(state.user_config->recording_key);
+                break;
         }
-        return 0;
+
+        const std::optional<std::string> formatted = config::detail::format_floating_point(value);
+        if (!formatted.has_value() || formatted->size() > config::detail::kMaximumFloatingPointTextLength) return false;
+
+        std::array<wchar_t, config::detail::kMaximumFloatingPointTextLength + 1> text{};
+        for (size_t index = 0; index < formatted->size(); ++index) text[index] = static_cast<wchar_t>((*formatted)[index]);
+        return SetDlgItemTextW(dialog, edit_control_id, text.data()) != FALSE;
     }
 
     bool submit_custom_input(UiState& state, CustomInputKind kind, std::wstring_view text) noexcept {
@@ -528,7 +539,7 @@ namespace {
         bool changed = false;
         switch (kind) {
             case CustomInputKind::reference_dpi: {
-                const std::optional<int> parsed = config::detail::parse_reference_dpi(text);
+                const std::optional<double> parsed = config::detail::parse_reference_dpi(text);
                 if (!parsed.has_value()) return false;
                 changed = state.user_config->reference_dpi != *parsed || state.reference_dpi_command != kCommandDpiCustom;
                 state.user_config->reference_dpi = *parsed;
@@ -536,7 +547,7 @@ namespace {
                 break;
             }
             case CustomInputKind::calibration_distance: {
-                const std::optional<int> parsed = config::detail::parse_calibration_distance_cm(text);
+                const std::optional<double> parsed = config::detail::parse_calibration_distance_cm(text);
                 if (!parsed.has_value()) return false;
                 changed = state.user_config->calibration_distance_cm != *parsed || state.calibration_distance_command != kCommandCalibrationDistanceCustom;
                 state.user_config->calibration_distance_cm = *parsed;
@@ -583,7 +594,7 @@ namespace {
                 SendMessageW(dialog, WM_SETICON, ICON_BIG, reinterpret_cast<LPARAM>(LoadIconW(instance, MAKEINTRESOURCEW(IDI_WINMOUSESENSCONVERTER))));
                 SendMessageW(dialog, WM_SETICON, ICON_SMALL, reinterpret_cast<LPARAM>(LoadIconW(instance, MAKEINTRESOURCEW(IDI_SMALL))));
                 apply_native_dialog_theme(dialog);
-                SetDlgItemInt(dialog, spec.edit_control_id, custom_input_initial_value(*state, kind), FALSE);
+                (void)set_custom_input_initial_value(dialog, *state, kind, spec.edit_control_id);
                 SendDlgItemMessageW(dialog, spec.edit_control_id, EM_SETLIMITTEXT, spec.text_limit, 0);
                 center_dialog_on_owner(dialog, state->hwnd);
 
@@ -594,9 +605,9 @@ namespace {
             case WM_COMMAND:
                 if (LOWORD(wparam) == IDOK) {
                     if (state == nullptr) return TRUE;
-                    wchar_t text[8]{};
-                    const UINT length = GetDlgItemTextW(dialog, spec.edit_control_id, text, static_cast<int>(std::size(text)));
-                    if (!submit_custom_input(*state, kind, std::wstring_view(text, length))) {
+                    std::array<wchar_t, config::detail::kMaximumFloatingPointTextLength + 1> text{};
+                    const UINT length = GetDlgItemTextW(dialog, spec.edit_control_id, text.data(), static_cast<int>(text.size()));
+                    if (!submit_custom_input(*state, kind, std::wstring_view(text.data(), length))) {
                         focus_and_select_dialog_edit(dialog, spec.edit_control_id);
                         return TRUE;
                     }

@@ -74,6 +74,6 @@ vcpkg integrate install
 - Keep help windows modeless and route their messages through `ui::preprocess_modeless_dialog_message`.
 - Persist every new user-selectable option in the configuration file. Add its default, parsing, validation, loading, and saving behavior to `config.hpp`, and document the option and configuration format in both language sections of `README.md`.
 - Treat every documented configuration field as required. Missing, duplicated, or invalid fields invalidate the complete configuration and restore all defaults; unknown fields remain ignored.
-- Calibration Distance presets are `10`, `20`, and `50 cm`; custom input accepts integer centimeters from `10` through `1000`. A successful Custom submission keeps Custom checked for that run, while startup maps saved preset values back to their preset commands.
+- Calibration Distance presets are `10`, `20`, and `50 cm`; custom input accepts finite decimal centimeters from `10` through `1000`, including `e`/`E` notation, with a 24-character limit. Reference DPI custom input follows the same decimal syntax and length limit within `1` through `999999`. A successful Custom submission keeps Custom checked for that run, while startup maps saved preset values back to their preset commands.
 - Keep resource scripts UTF-8 and retain `#pragma code_page(65001)`.
 - Validate relevant changes with both Debug and Release x64 builds; do not require x86 validation.

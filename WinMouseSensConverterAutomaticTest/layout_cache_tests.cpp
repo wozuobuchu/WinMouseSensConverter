@@ -61,8 +61,12 @@ namespace automatic_test {
             wchar_t unit[64]{};
             TEST_EXPECT(runner, ui::view::format_reference_dpi_cell(999999, reference_dpi, std::size(reference_dpi)) > 0);
             TEST_EXPECT(runner, std::wstring_view(reference_dpi) == L"REFDPI 999999");
+            TEST_EXPECT(runner, ui::view::format_reference_dpi_cell(800.25, reference_dpi, std::size(reference_dpi)) > 0);
+            TEST_EXPECT(runner, std::wstring_view(reference_dpi) == L"REFDPI 800.25");
             TEST_EXPECT(runner, ui::view::format_calibration_distance_cell(1000, 999999, config::OutputUnit::raw, calibration_distance, std::size(calibration_distance)) > 0);
             TEST_EXPECT(runner, std::wstring_view(calibration_distance) == L"CALDIS 393700393.701");
+            TEST_EXPECT(runner, ui::view::format_calibration_distance_cell(12.7, 800.5, config::OutputUnit::raw, calibration_distance, std::size(calibration_distance)) > 0);
+            TEST_EXPECT(runner, std::wstring_view(calibration_distance) == L"CALDIS 4002.500");
             TEST_EXPECT(runner, ui::view::format_unit_cell(config::OutputUnit::cm, unit, std::size(unit)) > 0);
             TEST_EXPECT(runner, std::wstring_view(unit) == L"UNIT cm");
         });

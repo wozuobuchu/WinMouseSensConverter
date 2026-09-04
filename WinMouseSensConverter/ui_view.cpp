@@ -23,9 +23,9 @@ namespace ui::view {
         return L"raw";
     }
 
-    double convert_distance(double raw_count, int reference_dpi, Unit unit) noexcept {
+    double convert_distance(double raw_count, double reference_dpi, Unit unit) noexcept {
         if (unit == Unit::raw) return raw_count;
-        const double inches = raw_count / static_cast<double>(reference_dpi);
+        const double inches = raw_count / reference_dpi;
         switch (unit) {
             case Unit::inch: return inches;
             case Unit::mm: return inches * 25.4;
@@ -37,8 +37,8 @@ namespace ui::view {
         return raw_count;
     }
 
-    double calibration_dpi_from_counts(double counts, int calibration_distance_cm) noexcept {
-        const double target_inches = static_cast<double>(calibration_distance_cm) / 2.54;
+    double calibration_dpi_from_counts(double counts, double calibration_distance_cm) noexcept {
+        const double target_inches = calibration_distance_cm / 2.54;
         return target_inches > 0.0 ? counts / target_inches : 0.0;
     }
 
@@ -46,22 +46,30 @@ namespace ui::view {
         return value > -0.0005 && value < 0.0005 ? 0.0 : value;
     }
 
-    int format_distance_value(double raw_count, int reference_dpi, Unit unit, wchar_t* text, size_t capacity) noexcept {
+    int format_distance_value(double raw_count, double reference_dpi, Unit unit, wchar_t* text, size_t capacity) noexcept {
         if (text == nullptr || capacity == 0) return -1;
         const double value = normalize_display_value(convert_distance(raw_count, reference_dpi, unit));
         if (std::isfinite(value) && std::abs(value) < 1.0e9) return swprintf_s(text, capacity, L"%.3f", value);
         return swprintf_s(text, capacity, L"%.3e", value);
     }
 
-    int format_reference_dpi_cell(int reference_dpi, wchar_t* text, size_t capacity) noexcept {
+    int format_reference_dpi_cell(double reference_dpi, wchar_t* text, size_t capacity) noexcept {
         if (text == nullptr || capacity == 0) return -1;
-        return swprintf_s(text, capacity, L"REFDPI %d", reference_dpi);
+        const std::optional<std::string> formatted = config::detail::format_floating_point(reference_dpi);
+        if (!formatted.has_value() || formatted->size() + 8 > capacity) return -1;
+
+        constexpr std::wstring_view prefix = L"REFDPI ";
+        std::copy(prefix.begin(), prefix.end(), text);
+        for (size_t index = 0; index < formatted->size(); ++index) text[prefix.size() + index] = static_cast<wchar_t>((*formatted)[index]);
+        const size_t length = prefix.size() + formatted->size();
+        text[length] = L'\0';
+        return static_cast<int>(length);
     }
 
-    int format_calibration_distance_cell(int calibration_distance_cm, int reference_dpi, Unit unit, wchar_t* text, size_t capacity) noexcept {
+    int format_calibration_distance_cell(double calibration_distance_cm, double reference_dpi, Unit unit, wchar_t* text, size_t capacity) noexcept {
         if (text == nullptr || capacity == 0) return -1;
-        const double target_inches = static_cast<double>(calibration_distance_cm) / 2.54;
-        const double target_reference_counts = target_inches * static_cast<double>(reference_dpi);
+        const double target_inches = calibration_distance_cm / 2.54;
+        const double target_reference_counts = target_inches * reference_dpi;
         wchar_t distance[128]{};
         if (format_distance_value(target_reference_counts, reference_dpi, unit, distance, std::size(distance)) <= 0) return -1;
         return swprintf_s(text, capacity, L"CALDIS %ls", distance);

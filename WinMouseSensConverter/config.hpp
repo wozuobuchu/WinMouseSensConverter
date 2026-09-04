@@ -10,6 +10,9 @@
 #include <Windows.h>
 #include <ShlObj.h>
 
+#include <array>
+#include <charconv>
+#include <cmath>
 #include <cstdint>
 #include <filesystem>
 #include <fstream>
@@ -34,9 +37,9 @@ namespace config {
     };
 
     struct UserConfig {
-        int reference_dpi = 800;
+        double reference_dpi = 800.0;
         OutputUnit unit = OutputUnit::cm;
-        int calibration_distance_cm = 10;
+        double calibration_distance_cm = 10.0;
         AppMode mode = AppMode::measurement;
         uint16_t recording_key = VK_F2;
     };
@@ -44,6 +47,7 @@ namespace config {
     namespace detail {
 
         constexpr size_t kMaximumConfigSize = 64 * 1024;
+        constexpr size_t kMaximumFloatingPointTextLength = 24;
         constexpr std::wstring_view kApplicationDirectoryName = L"WinMouseSensConverter";
         constexpr std::wstring_view kConfigFileName = L"config.ini";
 
@@ -80,20 +84,37 @@ namespace config {
             return value;
         }
 
-        template <typename Character>
-        constexpr std::optional<int> parse_reference_dpi_impl(std::basic_string_view<Character> text) noexcept {
-            if (text.empty() || text.size() > 6) return std::nullopt;
-            const std::optional<unsigned int> value = parse_unsigned_integer(text, 10, 999999);
-            if (!value.has_value() || *value < 1) return std::nullopt;
-            return static_cast<int>(*value);
+        inline std::optional<double> parse_floating_point(std::string_view text) noexcept {
+            if (text.empty() || text.size() > kMaximumFloatingPointTextLength) return std::nullopt;
+
+            double value = 0.0;
+            const auto result = std::from_chars(text.data(), text.data() + text.size(), value, std::chars_format::general);
+            if (result.ec != std::errc{} || result.ptr != text.data() + text.size() || !std::isfinite(value)) return std::nullopt;
+            return value;
         }
 
-        constexpr std::optional<int> parse_reference_dpi(std::string_view text) noexcept {
-            return parse_reference_dpi_impl(text);
+        inline std::optional<double> parse_floating_point(std::wstring_view text) noexcept {
+            if (text.empty() || text.size() > kMaximumFloatingPointTextLength) return std::nullopt;
+
+            std::array<char, kMaximumFloatingPointTextLength> narrow{};
+            for (size_t index = 0; index < text.size(); ++index) {
+                const wchar_t character = text[index];
+                if (static_cast<unsigned int>(character) > 0x7F) return std::nullopt;
+                narrow[index] = static_cast<char>(character);
+            }
+            return parse_floating_point(std::string_view(narrow.data(), text.size()));
         }
 
-        constexpr std::optional<int> parse_reference_dpi(std::wstring_view text) noexcept {
-            return parse_reference_dpi_impl(text);
+        inline std::optional<double> parse_reference_dpi(std::string_view text) noexcept {
+            const std::optional<double> value = parse_floating_point(text);
+            if (!value.has_value() || *value < 1.0 || *value > 999999.0) return std::nullopt;
+            return value;
+        }
+
+        inline std::optional<double> parse_reference_dpi(std::wstring_view text) noexcept {
+            const std::optional<double> value = parse_floating_point(text);
+            if (!value.has_value() || *value < 1.0 || *value > 999999.0) return std::nullopt;
+            return value;
         }
 
         constexpr std::optional<OutputUnit> parse_unit(std::string_view text) noexcept {
@@ -106,20 +127,16 @@ namespace config {
             return std::nullopt;
         }
 
-        template <typename Character>
-        constexpr std::optional<int> parse_calibration_distance_cm_impl(std::basic_string_view<Character> text) noexcept {
-            if (text.empty() || text.size() > 4) return std::nullopt;
-            const std::optional<unsigned int> value = parse_unsigned_integer(text, 10, 1000);
-            if (!value.has_value() || *value < 10) return std::nullopt;
-            return static_cast<int>(*value);
+        inline std::optional<double> parse_calibration_distance_cm(std::string_view text) noexcept {
+            const std::optional<double> value = parse_floating_point(text);
+            if (!value.has_value() || *value < 10.0 || *value > 1000.0) return std::nullopt;
+            return value;
         }
 
-        constexpr std::optional<int> parse_calibration_distance_cm(std::string_view text) noexcept {
-            return parse_calibration_distance_cm_impl(text);
-        }
-
-        constexpr std::optional<int> parse_calibration_distance_cm(std::wstring_view text) noexcept {
-            return parse_calibration_distance_cm_impl(text);
+        inline std::optional<double> parse_calibration_distance_cm(std::wstring_view text) noexcept {
+            const std::optional<double> value = parse_floating_point(text);
+            if (!value.has_value() || *value < 10.0 || *value > 1000.0) return std::nullopt;
+            return value;
         }
 
         constexpr std::optional<AppMode> parse_mode(std::string_view text) noexcept {
@@ -178,7 +195,7 @@ namespace config {
             return {};
         }
 
-        constexpr std::optional<UserConfig> parse_configuration(std::string_view text) noexcept {
+        inline std::optional<UserConfig> parse_configuration(std::string_view text) noexcept {
             constexpr std::string_view utf8_bom = "\xEF\xBB\xBF";
             if (text.starts_with(utf8_bom)) text.remove_prefix(utf8_bom.size());
 
@@ -207,7 +224,7 @@ namespace config {
 
                     if (key == "reference_dpi") {
                         if (found_reference_dpi) return std::nullopt;
-                        const std::optional<int> dpi = parse_reference_dpi(value);
+                        const std::optional<double> dpi = parse_reference_dpi(value);
                         if (!dpi.has_value()) return std::nullopt;
                         parsed.reference_dpi = *dpi;
                         found_reference_dpi = true;
@@ -219,7 +236,7 @@ namespace config {
                         found_unit = true;
                     } else if (key == "calibration_distance_cm") {
                         if (found_calibration_distance_cm) return std::nullopt;
-                        const std::optional<int> distance = parse_calibration_distance_cm(value);
+                        const std::optional<double> distance = parse_calibration_distance_cm(value);
                         if (!distance.has_value()) return std::nullopt;
                         parsed.calibration_distance_cm = *distance;
                         found_calibration_distance_cm = true;
@@ -246,7 +263,7 @@ namespace config {
             return parsed;
         }
 
-        constexpr bool parses_as(std::string_view text, int reference_dpi, OutputUnit unit, int calibration_distance_cm, AppMode mode, uint16_t recording_key) noexcept {
+        inline bool parses_as(std::string_view text, double reference_dpi, OutputUnit unit, double calibration_distance_cm, AppMode mode, uint16_t recording_key) noexcept {
             const std::optional<UserConfig> parsed = parse_configuration(text);
             return parsed.has_value() && parsed->reference_dpi == reference_dpi && parsed->unit == unit && parsed->calibration_distance_cm == calibration_distance_cm && parsed->mode == mode && parsed->recording_key == recording_key;
         }
@@ -300,19 +317,36 @@ namespace config {
         }
 
         inline bool valid(const UserConfig& user_config) noexcept {
-            return user_config.reference_dpi >= 1 && user_config.reference_dpi <= 999999 && !unit_name(user_config.unit).empty() && user_config.calibration_distance_cm >= 10 && user_config.calibration_distance_cm <= 1000 && !mode_name(user_config.mode).empty() && user_config.recording_key >= 1 && user_config.recording_key <= 254;
+            return std::isfinite(user_config.reference_dpi) && user_config.reference_dpi >= 1.0 && user_config.reference_dpi <= 999999.0 && !unit_name(user_config.unit).empty() && std::isfinite(user_config.calibration_distance_cm) && user_config.calibration_distance_cm >= 10.0 && user_config.calibration_distance_cm <= 1000.0 && !mode_name(user_config.mode).empty() && user_config.recording_key >= 1 && user_config.recording_key <= 254;
+        }
+
+        inline std::optional<std::string> format_floating_point(double value) noexcept {
+            if (!std::isfinite(value)) return std::nullopt;
+
+            std::array<char, kMaximumFloatingPointTextLength> text{};
+            const auto result = std::to_chars(text.data(), text.data() + text.size(), value, std::chars_format::general);
+            if (result.ec != std::errc{}) return std::nullopt;
+            try {
+                return std::string(text.data(), result.ptr);
+            } catch (...) {
+                return std::nullopt;
+            }
         }
 
         inline std::optional<std::string> serialize(const UserConfig& user_config) noexcept {
             if (!valid(user_config)) return std::nullopt;
 
             try {
+                const std::optional<std::string> reference_dpi = format_floating_point(user_config.reference_dpi);
+                const std::optional<std::string> calibration_distance_cm = format_floating_point(user_config.calibration_distance_cm);
+                if (!reference_dpi.has_value() || !calibration_distance_cm.has_value()) return std::nullopt;
+
                 std::string contents = "reference_dpi = ";
-                contents += std::to_string(user_config.reference_dpi);
+                contents += *reference_dpi;
                 contents += "\r\nunit = ";
                 contents += unit_name(user_config.unit);
                 contents += "\r\ncalibration_distance_cm = ";
-                contents += std::to_string(user_config.calibration_distance_cm);
+                contents += *calibration_distance_cm;
                 contents += "\r\nmode = ";
                 contents += mode_name(user_config.mode);
                 constexpr char hex_digits[] = "0123456789ABCDEF";
