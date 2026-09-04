@@ -13,8 +13,8 @@ Key behavior:
 - Switching modes preserves the active recording and accumulated X/Y values.
 - Default settings are Measurement mode, `800` Reference DPI, `cm`, a `10 cm` calibration distance, and `F2`.
 - Supported output units are raw counts, inches, millimeters, centimeters, decimeters, and meters.
-- Keyboard and mouse Raw Input are collected by dedicated message threads. The main UI thread consumes their queues and renders with Direct2D and DirectWrite.
-- About, Instruction, custom DPI, custom calibration-distance, and custom recording-key windows are modeless. UI work must not block the main UI loop or either Raw Input thread.
+- Keyboard events, mouse-button events, and mouse movement are collected by one dedicated Raw Input message thread. The main UI thread consumes the SPSC key-event queue and packed movement snapshots, then renders with Direct2D and DirectWrite.
+- About, Instruction, custom DPI, custom calibration-distance, and custom recording-key windows are modeless. UI work must not block the main UI loop or the Raw Input thread.
 - The executable manifest requires administrator privileges at startup.
 
 ## Build policy
@@ -64,7 +64,8 @@ vcpkg integrate install
 
 ## Implementation constraints
 
-- Preserve the dedicated Raw Input message threads and their single-producer/single-consumer queue design.
+- Preserve the single combined Raw Input message thread, its 1 ms buffered-input interval, and its single-producer/single-consumer key-event queue design.
+- Keep keyboard and mouse-button transitions deduplicated through the shared `key_down_` state table. Map the five physical mouse buttons to their standard VK values; do not enqueue vertical or horizontal wheel movement as key events.
 - Keep cross-mode runtime data in `sync.hpp`: the recording flag, current mode, and accumulated X/Y values must not be replaced by a second application-state container.
 - Keep mode renderers isolated under `ui::modes::measurement` and `ui::modes::calibration`; put reusable drawing and formatting in the common UI layer, and dispatch exactly one mode renderer per frame.
 - Keep local include dependencies acyclic. Component implementations must include their interface and direct dependencies instead of an application umbrella header that includes the component interface; avoid reciprocal includes and back-edges between layers.

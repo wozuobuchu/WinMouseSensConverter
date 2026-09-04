@@ -3,8 +3,7 @@
 
 #include "Resource.hpp"
 
-#include "SYS/low_latency_keyboard.hpp"
-#include "SYS/low_latency_mousemov.hpp"
+#include "SYS/low_latency_input.hpp"
 
 #include "recording_key.hpp"
 
@@ -152,14 +151,14 @@ namespace {
         {kCommandRecordingKeyPeriod, VK_OEM_PERIOD, L"PERIOD"},
     }};
 
-    bool pull_msg_kbd(uint16_t recording_key) noexcept {
+    bool pull_msg_key(uint16_t recording_key) noexcept {
         static constexpr size_t kQueueSize = 1024;
-        static rawinput::LowLatencyKeyboard::KeyEvent queue[kQueueSize];
-        const size_t count = rawinput::LowLatencyKeyboard::pop_events<kQueueSize>(queue);
+        static rawinput::LowLatencyInput::KeyEvent queue[kQueueSize];
+        const size_t count = rawinput::LowLatencyInput::pop_events<kQueueSize>(queue);
         bool changed = false;
 
         for (size_t index = 0; index < count; ++index) {
-            const rawinput::LowLatencyKeyboard::KeyEvent& event = queue[index];
+            const rawinput::LowLatencyInput::KeyEvent& event = queue[index];
             if (event.down == 0 || !main_loop::matches_recording_key(recording_key, event.vkey)) continue;
 
             public_data::on_recording_ = public_data::on_recording_ == 0 ? static_cast<uint8_t>(~0) : 0;
@@ -177,7 +176,7 @@ namespace {
     }
 
     bool pull_msg_mouse() noexcept {
-        const auto [dx, dy] = rawinput::LowLatencyMouseMov::sample();
+        const auto [dx, dy] = rawinput::LowLatencyInput::sample();
         if (public_data::on_recording_ != 0) {
             public_data::accumulated_muzmov_dx += static_cast<double>(dx);
             public_data::accumulated_muzmov_dy += static_cast<double>(dy);
@@ -190,9 +189,9 @@ namespace {
         if (state.user_config == nullptr) return false;
 
         // Apply recording-key state transitions before attributing the pending mouse snapshot.
-        const bool keyboard_changed = pull_msg_kbd(state.user_config->recording_key);
+        const bool key_changed = pull_msg_key(state.user_config->recording_key);
         const bool mouse_changed = pull_msg_mouse();
-        return keyboard_changed || (public_data::on_recording_ != 0 && mouse_changed);
+        return key_changed || (public_data::on_recording_ != 0 && mouse_changed);
     }
 
     int scale_for_dpi(int value, UINT dpi) noexcept {

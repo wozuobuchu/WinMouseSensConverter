@@ -51,6 +51,9 @@
     <ClInclude Include="SYS\fps.hpp">
       <Filter>头文件\SYS</Filter>
     </ClInclude>
+    <ClInclude Include="SYS\low_latency_input.hpp">
+      <Filter>头文件\SYS</Filter>
+    </ClInclude>
     <ClInclude Include="SYS\low_latency_keyboard.hpp">
       <Filter>头文件\SYS</Filter>
     </ClInclude>

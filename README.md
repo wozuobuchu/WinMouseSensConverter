@@ -85,7 +85,7 @@ The application captures raw X/Y counts in the background. Horizontal X is norma
 #### Highlights
 
 - Native Windows desktop application written in C++20.
-- Buffered Raw Input capture on dedicated keyboard and mouse message threads.
+- Buffered keyboard, mouse-button, and mouse-movement Raw Input capture on one dedicated message thread.
 - Configurable background recording control without switching away from the game.
 - Different notification sounds for starting and stopping recording.
 - Starting clears the previous result; stopping leaves the final result visible.
@@ -110,9 +110,9 @@ The application captures raw X/Y counts in the background. Horizontal X is norma
 | Reference DPI | `100`, `400`, `800`, `1200`, `1600`, `3200`, `10000`, or Custom `1`–`999999` | `800` | Converts raw counts to physical units; does not affect calibrated DPI. |
 | Unit | `raw`, `inch`, `mm`, `cm`, `dm`, `m` | `cm` | Controls displayed measurement distances and the `CALDIS` header. |
 | Calibration Distance | `10`, `20`, `50 cm`, or Custom `10`–`1000 cm` | `10 cm` | Supplies the known ruler distance for calibration. |
-| Recording Key | `R`, `T`, `F2`, `F5`, `COMMA`, `PERIOD`, or Custom VK `1`–`254` | `F2` | Toggles recording on a matching keyboard Raw Input key-down transition. |
+| Recording Key | `R`, `T`, `F2`, `F5`, `COMMA`, `PERIOD`, or Custom VK `1`–`254` | `F2` | Toggles recording on a matching keyboard or physical mouse-button Raw Input key-down transition. |
 
-Invalid custom input keeps the last valid value active. Custom windows are modeless, so the main window and input threads continue running while they are open.
+Invalid custom input keeps the last valid value active. Custom windows are modeless, so the main window and input thread continue running while they are open.
 
 #### Configuration file
 
@@ -144,7 +144,7 @@ recording_key = 0x71
 - Blank lines and spaces or tabs around lines, keys, `=`, and values are accepted; CRLF and LF line endings are supported.
 - Key names and enum values are case-sensitive. Unknown fields are ignored.
 
-`recording_key` accepts a Windows Virtual-Key value from `1` through `254`: decimal such as `113`, or hexadecimal such as `0x71` or `0X71`. The application writes two-digit uppercase hexadecimal. The modeless custom field accepts at most four characters: decimal `1`–`254`, or `0x`/`0X` plus one or two hexadecimal digits. The main window uses the Windows key name when available and falls back to `VK 0xNN`. Only VK values actually emitted by keyboard Raw Input can trigger recording. Menu changes take effect immediately; file edits take effect at the next startup.
+`recording_key` accepts a Windows Virtual-Key value from `1` through `254`: decimal such as `113`, or hexadecimal such as `0x71` or `0X71`. The application writes two-digit uppercase hexadecimal. The modeless custom field accepts at most four characters: decimal `1`–`254`, or `0x`/`0X` plus one or two hexadecimal digits. The main window uses the Windows key name when available and falls back to `VK 0xNN`. Values emitted by keyboard Raw Input can trigger recording; the five physical mouse buttons are also available as `VK_LBUTTON` (`1`), `VK_RBUTTON` (`2`), `VK_MBUTTON` (`4`), `VK_XBUTTON1` (`5`), and `VK_XBUTTON2` (`6`). Menu changes take effect immediately; file edits take effect at the next startup.
 
 Selecting a custom calibration distance keeps **Custom...** checked for the rest of the run, even when the value is `10`, `20`, or `50`. Only the number is saved; those three values map back to presets at the next startup. Custom recording keys behave the same way: Custom remains checked for the run, while saved preset values map back to their preset command after restart. Existing valid configurations, including `F1`, remain valid.
 
@@ -228,13 +228,13 @@ If the target needs more counts than the baseline, its sensitivity is too low an
 
 Windows defines `RAWMOUSE::lLastX` and `lLastY` as signed displacement. Relative reports describe motion since the previous report. Unlike legacy `WM_MOUSEMOVE` cursor messages, Raw Input mouse movement is not affected by the pointer speed and acceleration configured in Windows Control Panel. See Microsoft's [RAWMOUSE documentation](https://learn.microsoft.com/en-us/windows/win32/api/winuser/ns-winuser-rawmouse) and [Raw Input overview](https://learn.microsoft.com/en-us/windows/win32/inputdev/about-raw-input).
 
-Both input threads register message-only windows with `RIDEV_INPUTSINK`, so they can receive background Raw Input without suppressing normal legacy keyboard or mouse messages. All relative mouse devices are accepted because reports are not filtered by `RAWINPUTHEADER::hDevice`; absolute-position and zero-movement mouse reports are ignored.
+The input thread registers keyboard and mouse Raw Input to one message-only window with `RIDEV_INPUTSINK`, so it can receive background reports without suppressing normal legacy keyboard or mouse messages. Reports are not filtered by `RAWINPUTHEADER::hDevice`, so all mouse devices contribute button events and all relative mouse devices contribute movement; absolute-position and zero-movement reports do not contribute movement.
 
 #### Recording boundaries
 
-At each UI polling boundary, keyboard events are applied before the pending mouse snapshot is sampled. Starting recording clears the displayed totals and then attributes that pending snapshot to the new session. Stopping turns recording off before the pending snapshot is drained, so that snapshot is discarded.
+At each UI polling boundary, keyboard and mouse-button events are applied before the pending mouse snapshot is sampled. Starting recording clears the displayed totals and then attributes that pending snapshot to the new session. Stopping turns recording off before the pending snapshot is drained, so that snapshot is discarded.
 
-Keyboard and mouse are independent Raw Input streams rather than one timestamp-merged stream. Keep the mouse stationary while pressing the recording key; otherwise a boundary packet may fall inside or outside the intended interval.
+Keyboard, mouse-button, and movement reports share one Raw Input drain, but the UI still applies all pending key events before sampling the complete pending mouse snapshot. Keep the mouse stationary while pressing the recording key; otherwise movement from the same UI polling interval may fall inside or outside the intended recording interval.
 
 #### Sources of measurement error
 
@@ -284,7 +284,7 @@ Small differences between repeated raw-count measurements are normal and do not 
 **The configured key does not start or stop recording**
 
 - Confirm that UAC was accepted and the application remains open.
-- Confirm that the displayed key matches `recording_key` and that a keyboard actually emits that VK value.
+- Confirm that the displayed key matches `recording_key` and that the keyboard or supported physical mouse button actually emits that VK value.
 - Test on the Windows desktop to distinguish game compatibility from application startup.
 - Check the game, overlays, keyboard utilities, remote desktop, drivers, and anti-cheat interception.
 - Input-thread registration failures are not shown as a separate UI error; a responsive window with no keyboard or mouse data can indicate that a capture thread did not start.
@@ -319,12 +319,11 @@ All relative mouse reports are merged. Keep secondary mice, touchpad emulators, 
 
 ```mermaid
 flowchart LR
-    Mouse["Mouse HID"] --> MouseThread["THREAD_MouseRawInput<br/>message-only window"]
-    MouseThread -->|"~1 ms, GetRawInputBuffer<br/>64-entry aligned buffer"| Atomic["Packed X/Y<br/>atomic CAS accumulator"]
+    Mouse["Mouse HID"] --> InputThread["THREAD_RawInput<br/>message-only window"]
+    Keyboard["Keyboard HID"] --> InputThread
+    InputThread -->|"~1 ms, GetRawInputBuffer<br/>64-entry aligned buffer"| Atomic["Packed X/Y<br/>atomic CAS accumulator"]
     Atomic -->|"exchange(0)"| Main["Main / UI thread<br/>~8 ms timer"]
-
-    Keyboard["Keyboard HID"] --> KeyboardThread["THREAD_KeyboardRawInput<br/>message-only window"]
-    KeyboardThread -->|"~1 ms, normalize<br/>and deduplicate"| Queue["Boost.Lockfree SPSC queue<br/>2048 events"]
+    InputThread -->|"normalize and deduplicate<br/>keyboard + mouse buttons"| Queue["Boost.Lockfree SPSC queue<br/>2048 events"]
     Queue -->|"up to 1024 per UI tick"| Main
 
     Main --> Shared["sync.hpp<br/>mode, recording, X/Y totals"]
@@ -335,21 +334,20 @@ flowchart LR
     Main -->|"redraw_dirty + timer gate"| D2D["Direct2D / DirectWrite"]
 ```
 
-The program has three principal execution contexts:
+The program has two principal execution contexts:
 
-1. **Mouse Raw Input thread** — owns a message-only window and drains relative movement into a packed atomic accumulator.
-2. **Keyboard Raw Input thread** — owns a second message-only window and produces normalized, deduplicated transitions for one SPSC consumer.
-3. **Main/UI thread** — handles window and modeless-dialog messages, consumes keyboard then mouse data on an approximately 8 ms timer, updates shared state, and renders exactly one mode.
+1. **Combined Raw Input thread** — owns one message-only window registered for keyboard and mouse input, drains relative movement into a packed atomic accumulator, and produces normalized, deduplicated keyboard and mouse-button transitions for one SPSC consumer.
+2. **Main/UI thread** — handles window and modeless-dialog messages, consumes key events then mouse movement on an approximately 8 ms timer, updates shared state, and renders exactly one mode.
 
-Both input threads start once during static initialization. A promise/future handshake completes only after Raw Input registration succeeds or reports failure. Shutdown posts `WM_QUIT`, joins each thread, unregisters its Raw Input device, and destroys its message-only window. Menu and paint paths do not perform input-thread joins or other blocking work.
+The input thread starts once during static initialization. A promise/future handshake completes only after keyboard and mouse Raw Input registration succeeds or reports failure. Shutdown posts `WM_QUIT`, joins the thread, unregisters both Raw Input devices, and destroys the message-only window. Menu and paint paths do not perform input-thread joins or other blocking work.
 
 #### Buffered input and concurrency
 
-Both named input threads deliberately exclude `WM_INPUT` from their wake mask, wait up to approximately 1 ms so reports can accumulate, and repeatedly drain `GetRawInputBuffer` through a fixed 64-entry, 8-byte-aligned array. Control messages are dispatched separately. A failed wait or buffer drain retries after 1 ms.
+The named input thread deliberately excludes `WM_INPUT` from its wake mask, waits up to approximately 1 ms so reports can accumulate, and repeatedly drains `GetRawInputBuffer` through a fixed 64-entry, 8-byte-aligned array. Control messages are dispatched separately. A failed wait or buffer drain retries after 1 ms.
 
 Mouse X/Y deltas are packed into one `std::atomic<uint64_t>`. The producer adds each relative packet with a compare-and-swap loop; the UI consumer takes and clears both axes with `exchange(0, std::memory_order_relaxed)`. If CAS races with exchange, it either completes before the snapshot or retries from the cleared state, placing the packet in the current or next snapshot without a producer/consumer update loss. This guarantee does not remove physical, sensor, game, or boundary error.
 
-The keyboard path splits generic Shift, Control, and Alt reports into left/right VK variants, ignores `VKey == 255`, and suppresses unchanged key states. Generic configured modifier values match either side; side-specific values match only that side. The keyboard thread pushes transitions into a capacity-2048 Boost.Lockfree SPSC queue. The main thread pops at most 1024 per UI tick and toggles only on matching key-down events. If the queue is full, that event is dropped while the atomic 256-key state table remains current; an extremely overloaded queue can therefore miss a recording toggle.
+The keyboard path splits generic Shift, Control, and Alt reports into left/right VK variants and ignores `VKey == 255`. Mouse left, right, middle, XBUTTON1, and XBUTTON2 transitions are converted to `VK_LBUTTON`, `VK_RBUTTON`, `VK_MBUTTON`, `VK_XBUTTON1`, and `VK_XBUTTON2`; vertical and horizontal wheel movement is not enqueued. Keyboard and mouse-button transitions share the same atomic 256-key state table, so unchanged states from either source are suppressed. Generic configured modifier values match either side; side-specific values match only that side. The input thread pushes transitions into a capacity-2048 Boost.Lockfree SPSC queue. The main thread pops at most 1024 per UI tick and toggles only on matching key-down events. If the queue is full, that event is dropped while the key-state table remains current; an extremely overloaded queue can therefore miss a recording toggle.
 
 #### State, rendering, and dialogs
 
@@ -370,8 +368,9 @@ The dispatcher calls exactly one isolated renderer per frame: `ui::modes::measur
 | Path | Purpose |
 | --- | --- |
 | `WinMouseSensConverter/WinMouseSensConverter.cpp` | `WinMain`, configuration lifetime, and the main message/consumer loop. |
-| `WinMouseSensConverter/SYS/low_latency_mousemov.hpp` | Named buffered mouse Raw Input thread and packed atomic movement accumulator. |
-| `WinMouseSensConverter/SYS/low_latency_keyboard.hpp` | Named buffered keyboard Raw Input thread, key-state table, and SPSC event queue. |
+| `WinMouseSensConverter/SYS/low_latency_input.hpp` | Combined buffered Raw Input thread, shared key-state table and SPSC event queue, and packed atomic movement accumulator. |
+| `WinMouseSensConverter/SYS/low_latency_mousemov.hpp` | Retained legacy mouse implementation; not included by the application. |
+| `WinMouseSensConverter/SYS/low_latency_keyboard.hpp` | Retained legacy keyboard implementation; not included by the application. |
 | `WinMouseSensConverter/config.hpp` | Header-only parsing, validation, loading, default recovery, and atomic-style save replacement. |
 | `WinMouseSensConverter/sync.hpp` | Shared recording flag, selected mode, and X/Y totals. |
 | `WinMouseSensConverter/recording_key.hpp` | Matching rules for generic and side-specific modifier VK values. |
@@ -445,7 +444,7 @@ Tests cover configuration parsing and serialization, unit and calibration calcul
 
 #### Contributing
 
-Issues and pull requests are welcome. Preserve the dedicated Raw Input threads and single-producer/single-consumer design, keep cross-mode state in `sync.hpp`, keep mode renderers isolated, and avoid reciprocal include dependencies. Do not add blocking waits, file/network operations, modal dialogs, or thread joins to menu or paint paths. Visible-state events must only mark the redraw dirty; keep rendering in the timer-gated main-loop path. Help windows must remain modeless, resource scripts must remain UTF-8 with `#pragma code_page(65001)`, and relevant changes must pass both Debug x64 and Release x64 validation.
+Issues and pull requests are welcome. Preserve the combined Raw Input thread, its shared key-state deduplication and single-producer/single-consumer design, keep cross-mode state in `sync.hpp`, keep mode renderers isolated, and avoid reciprocal include dependencies. Do not add blocking waits, file/network operations, modal dialogs, or thread joins to menu or paint paths. Visible-state events must only mark the redraw dirty; keep rendering in the timer-gated main-loop path. Help windows must remain modeless, resource scripts must remain UTF-8 with `#pragma code_page(65001)`, and relevant changes must pass both Debug x64 and Release x64 validation.
 
 #### License
 
@@ -525,7 +524,7 @@ WinMouseSensConverter 测量鼠标在游戏视角完成已知水平旋转角度�
 #### 功能特性
 
 - 使用 C++20 编写的原生 Windows 桌面程序。
-- 键盘和鼠标各自由独立消息线程批量采集 Raw Input。
+- 键盘、鼠标按键和鼠标移动由一条独立消息线程批量采集 Raw Input。
 - 可在不切回程序的情况下通过可配置录制键控制后台记录。
 - 开始和停止录制使用不同提示音。
 - 开始新录制会清除旧结果，停止后最终结果继续显示。
@@ -550,7 +549,7 @@ WinMouseSensConverter 测量鼠标在游戏视角完成已知水平旋转角度�
 | Reference DPI | `100`、`400`、`800`、`1200`、`1600`、`3200`、`10000`，或 Custom `1`～`999999` | `800` | 将 raw counts 换算成物理单位；不影响定标 DPI。 |
 | Unit | `raw`、`inch`、`mm`、`cm`、`dm`、`m` | `cm` | 控制测量距离和 `CALDIS` 顶部字段的显示单位。 |
 | Calibration Distance | `10`、`20`、`50 cm`，或 Custom `10`～`1000 cm` | `10 cm` | 为定标公式提供已知尺子距离。 |
-| Recording Key | `R`、`T`、`F2`、`F5`、`COMMA`、`PERIOD`，或 Custom VK `1`～`254` | `F2` | 在收到匹配的键盘 Raw Input 按下状态变化时切换录制。 |
+| Recording Key | `R`、`T`、`F2`、`F5`、`COMMA`、`PERIOD`，或 Custom VK `1`～`254` | `F2` | 在收到匹配的键盘或物理鼠标按键 Raw Input 按下状态变化时切换录制。 |
 
 自定义输入无效时会保留最后一个合法值。自定义窗口是非模态的，打开期间主窗口和输入线程仍继续运行。
 
@@ -584,7 +583,7 @@ recording_key = 0x71
 - 允许空行，以及行、键、`=`、值两侧的空格或制表符；支持 CRLF 和 LF 换行。
 - 键名和枚举值区分大小写；未知字段会被忽略。
 
-`recording_key` 接受 `1`～`254` 的 Windows Virtual-Key 数值，可以使用 `113` 这样的十进制，也可以使用 `0x71` 或 `0X71` 这样的十六进制。程序保存时统一写为两位大写十六进制。非模态自定义输入框最多接受四个字符：十进制 `1`～`254`，或 `0x`/`0X` 后跟一至两位十六进制数字。主界面优先显示 Windows 提供的按键名称，无法取得时显示 `VK 0xNN`。只有键盘 Raw Input 实际产生的 VK 值才能触发录制。菜单修改立即生效；手工文件修改在下次启动时生效。
+`recording_key` 接受 `1`～`254` 的 Windows Virtual-Key 数值，可以使用 `113` 这样的十进制，也可以使用 `0x71` 或 `0X71` 这样的十六进制。程序保存时统一写为两位大写十六进制。非模态自定义输入框最多接受四个字符：十进制 `1`～`254`，或 `0x`/`0X` 后跟一至两位十六进制数字。主界面优先显示 Windows 提供的按键名称，无法取得时显示 `VK 0xNN`。键盘 Raw Input 实际产生的 VK 值可以触发录制；五个物理鼠标键也分别可用 `VK_LBUTTON`（`1`）、`VK_RBUTTON`（`2`）、`VK_MBUTTON`（`4`）、`VK_XBUTTON1`（`5`）和 `VK_XBUTTON2`（`6`）配置。菜单修改立即生效；手工文件修改在下次启动时生效。
 
 选择自定义定标距离后，即使输入 `10`、`20` 或 `50`，本次运行也会保持 **Custom...** 选中；保存时只写数值，下次启动时这三个值会重新映射到预设。自定义录制键采用同样规则：本次运行保持 Custom，重启后已保存的预设值重新映射到预设命令。现有合法配置（包括 `F1`）仍然有效。
 
@@ -668,13 +667,13 @@ FOV 本身不直接定义角灵敏度，但 FOV、ADS 和缩放状态可能使�
 
 Windows 将 `RAWMOUSE::lLastX` 和 `lLastY` 定义为有符号位移；相对报告表示自上一报告以来的移动。与传统 `WM_MOUSEMOVE` 光标消息不同，Raw Input 鼠标移动不受 Windows 控制面板指针速度和加速度影响。参见 Microsoft 的 [RAWMOUSE 文档](https://learn.microsoft.com/en-us/windows/win32/api/winuser/ns-winuser-rawmouse)和 [Raw Input 概述](https://learn.microsoft.com/en-us/windows/win32/inputdev/about-raw-input)。
 
-两条输入线程都使用带 `RIDEV_INPUTSINK` 的 message-only window，因此能够在后台接收 Raw Input，同时不会抑制普通传统键盘或鼠标消息。程序不按 `RAWINPUTHEADER::hDevice` 过滤鼠标报告，所以所有相对鼠标设备都会参与；绝对坐标和零位移鼠标报告会被忽略。
+输入线程把键盘和鼠标 Raw Input 注册到同一个带 `RIDEV_INPUTSINK` 的 message-only window，因此能够在后台接收报告，同时不会抑制普通传统键盘或鼠标消息。程序不按 `RAWINPUTHEADER::hDevice` 过滤报告，所以所有鼠标设备都会贡献按键事件、所有相对鼠标设备都会贡献移动；绝对坐标和零位移报告不计入移动。
 
 #### 录制边界
 
-每个 UI 轮询边界都会先处理键盘事件，再提取待处理鼠标快照。开始录制会清空显示累计值，然后把该待处理快照归入新记录；停止录制会先关闭记录，再提取并丢弃该快照。
+每个 UI 轮询边界都会先处理键盘和鼠标按键事件，再提取待处理鼠标快照。开始录制会清空显示累计值，然后把该待处理快照归入新记录；停止录制会先关闭记录，再提取并丢弃该快照。
 
-键盘和鼠标是两个独立 Raw Input 数据流，不是按时间戳合并的统一事件流。按录制键时应保持鼠标静止，否则边界数据包可能落在预期区间内或区间外。
+键盘、鼠标按键和移动报告由同一次 Raw Input 排空处理，但 UI 仍先应用所有待处理按键事件，再提取完整的待处理鼠标快照。按录制键时应保持鼠标静止，否则同一 UI 轮询区间内的移动可能落在预期录制区间内或区间外。
 
 #### 测量误差来源
 
@@ -724,10 +723,10 @@ Windows 将 `RAWMOUSE::lLastX` 和 `lLastY` 定义为有符号位移；相对报
 **配置的按键无法开始或停止录制**
 
 - 确认已经接受 UAC 提示，且程序仍在运行。
-- 确认界面显示的按键与 `recording_key` 一致，并且键盘确实产生该 VK 值。
+- 确认界面显示的按键与 `recording_key` 一致，并且键盘或受支持的物理鼠标键确实产生该 VK 值。
 - 先在 Windows 桌面测试，以区分游戏兼容性与程序启动问题。
 - 检查游戏、覆盖层、键盘工具、远程桌面、驱动或反作弊是否拦截输入。
-- 输入线程注册失败不会显示独立错误提示；如果窗口正常响应但完全没有键盘或鼠标数据，可能是某条采集线程没有启动。
+- 输入线程注册失败不会显示独立错误提示；如果窗口正常响应但完全没有键盘或鼠标数据，可能是采集线程没有启动。
 
 **换算出的厘米数与尺子不一致**
 
@@ -759,12 +758,11 @@ Reference DPI 是数学输入。标称 `800 DPI` 可能偏离有效 CPI，表面
 
 ```mermaid
 flowchart LR
-    Mouse["鼠标 HID"] --> MouseThread["THREAD_MouseRawInput<br/>仅消息窗口"]
-    MouseThread -->|"约 1 ms，GetRawInputBuffer<br/>64 项对齐缓冲区"| Atomic["打包 X/Y<br/>原子 CAS 累加器"]
+    Mouse["鼠标 HID"] --> InputThread["THREAD_RawInput<br/>仅消息窗口"]
+    Keyboard["键盘 HID"] --> InputThread
+    InputThread -->|"约 1 ms，GetRawInputBuffer<br/>64 项对齐缓冲区"| Atomic["打包 X/Y<br/>原子 CAS 累加器"]
     Atomic -->|"exchange(0)"| Main["主/UI 线程<br/>约 8 ms 定时器"]
-
-    Keyboard["键盘 HID"] --> KeyboardThread["THREAD_KeyboardRawInput<br/>仅消息窗口"]
-    KeyboardThread -->|"约 1 ms，归一化<br/>并去除重复状态"| Queue["Boost.Lockfree SPSC 队列<br/>2048 个事件"]
+    InputThread -->|"归一化并去除重复状态<br/>键盘 + 鼠标按键"| Queue["Boost.Lockfree SPSC 队列<br/>2048 个事件"]
     Queue -->|"每个 UI 节拍最多 1024 个"| Main
 
     Main --> Shared["sync.hpp<br/>模式、录制状态、X/Y 累计值"]
@@ -775,21 +773,20 @@ flowchart LR
     Main -->|"redraw_dirty + 定时器门控"| D2D["Direct2D / DirectWrite"]
 ```
 
-程序有三个主要执行上下文：
+程序有两个主要执行上下文：
 
-1. **鼠标 Raw Input 线程**——拥有独立 message-only window，把相对位移排入打包原子累加器。
-2. **键盘 Raw Input 线程**——拥有第二个 message-only window，为唯一 SPSC 消费者生成归一化且去重的状态变化。
-3. **主/UI 线程**——处理窗口和非模态窗口消息，在约 8 ms 定时器上依次消费键盘、鼠标数据，更新共享状态并只渲染一个模式。
+1. **合并后的 Raw Input 线程**——拥有一个同时注册键盘和鼠标输入的 message-only window，把相对位移排入打包原子累加器，并为唯一 SPSC 消费者生成归一化且去重的键盘与鼠标按键状态变化。
+2. **主/UI 线程**——处理窗口和非模态窗口消息，在约 8 ms 定时器上依次消费按键事件和鼠标移动，更新共享状态并只渲染一个模式。
 
-两条输入线程在静态初始化阶段各启动一次。promise/future 握手只在 Raw Input 注册成功或明确失败后完成。退出时发送 `WM_QUIT`、回收线程、注销 Raw Input 设备并销毁 message-only window。菜单和绘制路径不会执行输入线程 `join` 或其他阻塞工作。
+输入线程在静态初始化阶段启动一次。promise/future 握手只在键盘和鼠标 Raw Input 注册成功或明确失败后完成。退出时发送 `WM_QUIT`、回收线程、注销两个 Raw Input 设备并销毁 message-only window。菜单和绘制路径不会执行输入线程 `join` 或其他阻塞工作。
 
 #### 批量输入与并发
 
-两条已命名输入线程都会从唤醒掩码中排除 `WM_INPUT`，最多等待约 1 ms 让报告聚合，再通过固定 64 项、8 字节对齐数组反复排空 `GetRawInputBuffer`。控制消息单独分派；等待或缓冲区读取失败时会在 1 ms 后重试。
+已命名的输入线程会从唤醒掩码中排除 `WM_INPUT`，最多等待约 1 ms 让报告聚合，再通过固定 64 项、8 字节对齐数组反复排空 `GetRawInputBuffer`。控制消息单独分派；等待或缓冲区读取失败时会在 1 ms 后重试。
 
 鼠标 X/Y 增量打包在同一个 `std::atomic<uint64_t>` 中。生产者通过 compare-and-swap 循环累加每个相对报告，UI 消费者使用 `exchange(0, std::memory_order_relaxed)` 同时取得并清除两个轴。如果 CAS 与 exchange 竞争，它会在快照前完成，或从已清零状态重试，因此数据包会进入当前或下一快照，不会因生产者/消费者同时更新而丢失。这一保证不能消除物理、传感器、游戏或边界误差。
 
-键盘路径会把通用 Shift、Control、Alt 报告拆分成左右 VK 变体，忽略 `VKey == 255`，并过滤未发生改变的按键状态。配置为通用修饰键时匹配任意一侧，配置为左右专用值时只匹配对应侧。键盘线程把变化推入容量为 2048 的 Boost.Lockfree SPSC 队列；主线程每个 UI 节拍最多取出 1024 个，只在匹配的按下事件上切换录制。如果队列已满，该事件会被丢弃，但 256 项原子按键状态表仍保持最新；极端队列拥塞因此可能漏掉一次录制切换。
+键盘路径会把通用 Shift、Control、Alt 报告拆分成左右 VK 变体，并忽略 `VKey == 255`。鼠标左键、右键、中键、XBUTTON1 和 XBUTTON2 的状态变化会转换为 `VK_LBUTTON`、`VK_RBUTTON`、`VK_MBUTTON`、`VK_XBUTTON1` 和 `VK_XBUTTON2`；垂直与水平滚轮滚动不会入队。键盘和鼠标按键共用同一个 256 项原子按键状态表，因此两种来源中未发生改变的状态都会被过滤。配置为通用修饰键时匹配任意一侧，配置为左右专用值时只匹配对应侧。输入线程把状态变化推入容量为 2048 的 Boost.Lockfree SPSC 队列；主线程每个 UI 节拍最多取出 1024 个，只在匹配的按下事件上切换录制。如果队列已满，该事件会被丢弃，但按键状态表仍保持最新；极端队列拥塞因此可能漏掉一次录制切换。
 
 #### 状态、渲染与窗口
 
@@ -810,8 +807,9 @@ Measurement 数值使用三位小数，把换算后绝对值小于 `0.0005` 的�
 | 路径 | 用途 |
 | --- | --- |
 | `WinMouseSensConverter/WinMouseSensConverter.cpp` | `WinMain`、配置生命周期和主消息/消费循环。 |
-| `WinMouseSensConverter/SYS/low_latency_mousemov.hpp` | 已命名的批量鼠标 Raw Input 线程和打包原子位移累加器。 |
-| `WinMouseSensConverter/SYS/low_latency_keyboard.hpp` | 已命名的批量键盘 Raw Input 线程、按键状态表和 SPSC 事件队列。 |
+| `WinMouseSensConverter/SYS/low_latency_input.hpp` | 合并后的批量 Raw Input 线程、共享按键状态表与 SPSC 事件队列，以及打包原子位移累加器。 |
+| `WinMouseSensConverter/SYS/low_latency_mousemov.hpp` | 保留的旧鼠标实现；应用不再包含。 |
+| `WinMouseSensConverter/SYS/low_latency_keyboard.hpp` | 保留的旧键盘实现；应用不再包含。 |
 | `WinMouseSensConverter/config.hpp` | 仅头文件的解析、校验、加载、默认恢复和原子式替换保存。 |
 | `WinMouseSensConverter/sync.hpp` | 共享录制标志、当前模式和 X/Y 累计值。 |
 | `WinMouseSensConverter/recording_key.hpp` | 通用与左右专用修饰键 VK 值的匹配规则。 |
@@ -885,7 +883,7 @@ x64\Release\WinMouseSensConverter.exe
 
 #### 参与贡献
 
-欢迎提交 Issue 和 Pull Request。请保留独立 Raw Input 线程和单生产者/单消费者设计，把跨模式状态保留在 `sync.hpp`，隔离各模式渲染器，并避免互相依赖的 include。不要在菜单或绘制路径中加入阻塞等待、文件/网络操作、模态窗口或线程 `join`。可见状态事件只能设置重绘脏标记，绘制必须留在定时器门控的主循环路径。帮助窗口必须保持非模态，资源脚本必须保持 UTF-8 和 `#pragma code_page(65001)`；相关改动必须同时通过 Debug x64 与 Release x64 验证。
+欢迎提交 Issue 和 Pull Request。请保留合并后的 Raw Input 线程、共享按键状态去重和单生产者/单消费者设计，把跨模式状态保留在 `sync.hpp`，隔离各模式渲染器，并避免互相依赖的 include。不要在菜单或绘制路径中加入阻塞等待、文件/网络操作、模态窗口或线程 `join`。可见状态事件只能设置重绘脏标记，绘制必须留在定时器门控的主循环路径。帮助窗口必须保持非模态，资源脚本必须保持 UTF-8 和 `#pragma code_page(65001)`；相关改动必须同时通过 Debug x64 与 Release x64 验证。
 
 #### 许可证
 

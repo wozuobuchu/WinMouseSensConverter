@@ -167,6 +167,7 @@
     <ClInclude Include="SYS\aop.hpp" />
     <ClInclude Include="SYS\cursor_pos.hpp" />
     <ClInclude Include="SYS\fps.hpp" />
+    <ClInclude Include="SYS\low_latency_input.hpp" />
     <ClInclude Include="SYS\low_latency_keyboard.hpp" />
     <ClInclude Include="SYS\low_latency_mousemov.hpp" />
     <ClInclude Include="targetver.hpp" />
