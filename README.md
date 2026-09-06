@@ -361,7 +361,7 @@ Window, menu, DPI, display, sizing, paint, and input events only mark `UiState::
 
 Measurement values use three decimal places, normalize converted magnitudes smaller than `0.0005` to displayed zero, and switch to scientific notation for non-finite or extremely large values. Calibration shows `— DPI` before any movement, normally uses two decimal places, and also falls back to scientific notation for extremely large results. The two Measurement cards share the smaller calculated fit scale so X and Y retain consistent typography.
 
-The UI uses a portable C++20 header-only component library under `D2DUILIB`. One window-level `D2duiContext` owns and caches the Direct2D/DirectWrite resources. The application keeps three persistent component queues: common, Measurement, and Calibration. Each frame opens one Direct2D transaction, draws the common queue followed by exactly one mode queue, and closes that transaction. Switching modes neither recreates components nor duplicates the cross-mode state. About, Instruction, custom DPI, custom calibration-distance, and custom recording-key windows remain modeless and are routed through `ui::preprocess_modeless_dialog_message`.
+The UI uses a portable C++20 header-only component library under `D2DUILIB`. Components handle layout and rendering; the application updates their state through setters and selects render queues for the current display mode. Each selected queue draws all its registered components in registration order. One window-level `D2duiContext` owns and caches the Direct2D/DirectWrite resources. The application keeps three persistent component queues: common, Measurement, and Calibration. Each frame opens one Direct2D transaction, draws the common queue followed by exactly one mode queue, and closes that transaction. Switching modes neither recreates components nor duplicates the cross-mode state. About, Instruction, custom DPI, custom calibration-distance, and custom recording-key windows remain modeless and are routed through `ui::preprocess_modeless_dialog_message`.
 
 #### Configuration lifecycle
 
@@ -802,7 +802,7 @@ flowchart LR
 
 Measurement 数值使用三位小数，把换算后绝对值小于 `0.0005` 的结果显示为零，并在非有限值或极大数值时改用科学计数法。尚未产生移动时，Calibration 显示 `— DPI`；通常使用两位小数，极大结果同样改用科学计数法。两个 Measurement 卡片共同采用较小的计算适配比例，使 X/Y 字体尺寸保持一致。
 
-界面使用位于 `D2DUILIB` 下、可迁移的 C++20 header-only 组件库。窗口级唯一 `D2duiContext` 统一拥有并缓存 Direct2D/DirectWrite 资源；应用长期保存公共、Measurement 和 Calibration 三个组件队列。每帧只开启一次 Direct2D 绘制事务，先绘制公共队列，再绘制当前模式的一个队列，最后统一结束事务。模式切换不会重建组件，也不会复制跨模式状态。“关于”、“使用说明”、自定义 DPI、自定义定标距离和自定义录制键窗口保持非模态，并统一经过 `ui::preprocess_modeless_dialog_message`。
+界面使用位于 `D2DUILIB` 下、可迁移的 C++20 header-only 组件库。组件负责布局与绘制；应用通过状态设置接口更新组件，并为当前显示模式选择渲染队列。每个选中的队列按注册顺序绘制其中的全部组件。窗口级唯一 `D2duiContext` 统一拥有并缓存 Direct2D/DirectWrite 资源；应用长期保存公共、Measurement 和 Calibration 三个组件队列。每帧只开启一次 Direct2D 绘制事务，先绘制公共队列，再绘制当前模式的一个队列，最后统一结束事务。模式切换不会重建组件，也不会复制跨模式状态。“关于”、“使用说明”、自定义 DPI、自定义定标距离和自定义录制键窗口保持非模态，并统一经过 `ui::preprocess_modeless_dialog_message`。
 
 #### 配置生命周期
 

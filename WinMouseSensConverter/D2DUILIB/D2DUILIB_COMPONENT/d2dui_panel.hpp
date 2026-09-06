@@ -45,8 +45,6 @@ namespace d2dui {
             return S_OK;
         }
 
-        void on_click() noexcept override {}
-
         void set_fill_color(D2duiColor color) noexcept { fill_color_ = color; }
         void set_border(D2duiColor color, float width = 1.0f) noexcept { border_color_ = color; border_width_ = width; draw_border_ = true; }
         void disable_border() noexcept { draw_border_ = false; }

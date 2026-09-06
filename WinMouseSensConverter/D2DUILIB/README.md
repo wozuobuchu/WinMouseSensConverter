@@ -29,7 +29,7 @@ if (context.begin_frame({0xF4F7FB, 1.0f}) == S_OK) {
 
 `D2duiSystemRender` owns registered components with `std::unique_ptr`. `register_component` and `emplace_component` return references to the stored objects. Those references remain valid across render-queue vector reallocations, but become invalid when the component is unregistered, the queue is cleared, or the renderer is destroyed.
 
-The component `on_click()` interface defines behavior only. D2DUILIB does not perform hit testing, coordinate checks, or mouse-message routing. The host decides when to invoke it.
+The component base interface provides `get_bounds()`, `resize()`, and `draw()` for layout and rendering. Each render queue draws all registered components in registration order and returns immediately if a component fails to draw. The host selects which queues to draw and updates component state through setters such as `set_checked()`. D2DUILIB does not perform hit testing or mouse-message routing.
 
 ## Resource lifetime
 

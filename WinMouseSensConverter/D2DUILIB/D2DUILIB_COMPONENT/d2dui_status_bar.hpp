@@ -28,7 +28,6 @@ namespace d2dui {
             label_text_.set_style(leading_style());
             label_text_.set_color({0x172033, 1.0f});
             label_text_.set_text(L"Recording");
-            toggle_.set_enabled(false);
         }
 
         [[nodiscard]] const D2D1_RECT_F& get_bounds() const noexcept override { return bounds_; }
@@ -54,7 +53,6 @@ namespace d2dui {
             return toggle_.draw(context);
         }
 
-        void on_click() noexcept override { if (enabled_) toggle_.on_click(); }
         void set_badge_text(std::wstring_view text) {
             const std::wstring& current = badge_text_.text();
             if (std::wstring_view(current.data(), current.size()) == text) return;

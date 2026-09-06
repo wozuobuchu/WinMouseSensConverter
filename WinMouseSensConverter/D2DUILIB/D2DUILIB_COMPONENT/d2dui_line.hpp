@@ -19,7 +19,6 @@ namespace d2dui {
                 D2D1::Point2F(bounds_.left, bounds_.top), D2D1::Point2F(bounds_.right, bounds_.bottom), brush, width_);
             return S_OK;
         }
-        void on_click() noexcept override {}
         void set_color(D2duiColor color) noexcept { color_ = color; }
         void set_width(float width) noexcept { width_ = width; }
 

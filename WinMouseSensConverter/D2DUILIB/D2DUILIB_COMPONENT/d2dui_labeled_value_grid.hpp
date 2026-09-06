@@ -57,8 +57,6 @@ namespace d2dui {
             return S_OK;
         }
 
-        void on_click() noexcept override {}
-
         void set_items(const std::vector<ItemText>& texts) {
             if (items_.size() != texts.size()) {
                 items_.clear();

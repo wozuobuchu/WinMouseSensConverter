@@ -51,7 +51,6 @@ namespace d2dui {
         HRESULT draw(D2duiContext& context) noexcept {
             if (!context.in_frame()) return D2DERR_WRONG_STATE;
             for (const auto& component : components_) {
-                if (!component->visible()) continue;
                 const HRESULT result = component->draw(context);
                 if (FAILED(result)) return result;
             }

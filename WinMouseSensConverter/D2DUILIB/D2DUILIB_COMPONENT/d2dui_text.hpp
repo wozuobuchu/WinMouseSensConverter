@@ -43,8 +43,6 @@ namespace d2dui {
             return S_OK;
         }
 
-        void on_click() noexcept override {}
-
         void set_text(std::wstring text) {
             if (text_ == text) return;
             text_ = std::move(text);

@@ -30,7 +30,6 @@ namespace d2dui {
             target->FillEllipse(D2D1::Ellipse(D2D1::Point2F(x, y), thumb_radius, thumb_radius), thumb);
             return S_OK;
         }
-        void on_click() noexcept override { if (enabled_) checked_ = !checked_; }
         void set_checked(bool checked) noexcept { checked_ = checked; }
         [[nodiscard]] bool checked() const noexcept { return checked_; }
         void set_colors(D2duiColor checked, D2duiColor unchecked, D2duiColor thumb) noexcept {

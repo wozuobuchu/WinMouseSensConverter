@@ -104,14 +104,15 @@ namespace automatic_test {
             TEST_EXPECT(runner, render.size() == 64);
         });
 
-        runner.run("switch click is behavior only", [&] {
+        runner.run("switch state is explicitly controlled", [&] {
             d2dui::D2duiSwitch toggle;
             TEST_EXPECT(runner, !toggle.checked());
-            toggle.on_click();
+            toggle.set_checked(true);
             TEST_EXPECT(runner, toggle.checked());
-            toggle.set_enabled(false);
-            toggle.on_click();
+            toggle.set_checked(true);
             TEST_EXPECT(runner, toggle.checked());
+            toggle.set_checked(false);
+            TEST_EXPECT(runner, !toggle.checked());
         });
 
         runner.run("text layout is reused until its input changes", [&] {

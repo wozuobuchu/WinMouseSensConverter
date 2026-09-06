@@ -61,8 +61,6 @@ namespace d2dui {
             return S_OK;
         }
 
-        void on_click() noexcept override {}
-
         void set_leading_text(std::wstring text) { leading_text_.set_text(std::move(text)); }
 
         void set_cells(const std::vector<std::wstring>& texts) {
