@@ -160,11 +160,11 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClInclude Include="config.hpp" />
+    <ClInclude Include="D2DUILIB\D2DUILIB_INTERFACE\d2dui_cursor_pos.hpp" />
     <ClInclude Include="framework.hpp" />
     <ClInclude Include="Resource.hpp" />
     <ClInclude Include="sync.hpp" />
     <ClInclude Include="SYS\aop.hpp" />
-    <ClInclude Include="SYS\cursor_pos.hpp" />
     <ClInclude Include="SYS\fps.hpp" />
     <ClInclude Include="SYS\low_latency_input.hpp" />
     <ClInclude Include="SYS\low_latency_keyboard.hpp" />

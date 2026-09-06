@@ -81,9 +81,6 @@
     <ClInclude Include="SYS\aop.hpp">
       <Filter>头文件\SYS</Filter>
     </ClInclude>
-    <ClInclude Include="SYS\cursor_pos.hpp">
-      <Filter>头文件\SYS</Filter>
-    </ClInclude>
     <ClInclude Include="SYS\fps.hpp">
       <Filter>头文件\SYS</Filter>
     </ClInclude>
@@ -95,6 +92,9 @@
     </ClInclude>
     <ClInclude Include="SYS\low_latency_mousemov.hpp">
       <Filter>头文件\SYS</Filter>
+    </ClInclude>
+    <ClInclude Include="D2DUILIB\D2DUILIB_INTERFACE\d2dui_cursor_pos.hpp">
+      <Filter>头文件\D2DUILIB\D2DUILIB_INTERFACE</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>

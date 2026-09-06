@@ -2,7 +2,7 @@
 
 #include "sync.hpp"
 #include "ui_view.hpp"
-#include "SYS/cursor_pos.hpp"
+#include "D2DUILIB/D2DUILIB_INTERFACE/d2dui_cursor_pos.hpp"
 
 #include <array>
 #include <limits>
