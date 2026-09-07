@@ -5,6 +5,8 @@
 
 #include "config.hpp"
 
+#include "SYS/low_latency_input.hpp"
+
 #include "D2DUILIB/D2DUILIB_COMPONENT/d2dui_labeled_value_grid.hpp"
 #include "D2DUILIB/D2DUILIB_COMPONENT/d2dui_segmented_header.hpp"
 #include "D2DUILIB/D2DUILIB_COMPONENT/d2dui_status_bar.hpp"
@@ -13,6 +15,8 @@
 #include <cstddef>
 #include <functional>
 #include <string_view>
+
+#include <boost/circular_buffer.hpp>
 
 namespace ui::view {
 
@@ -60,6 +64,9 @@ namespace ui::view {
         [[nodiscard]] d2dui::D2duiSystemRender& calibration_render() noexcept { return calibration_render_; }
         [[nodiscard]] d2dui::D2duiLabeledValueGrid& measurement_grid() noexcept { return measurement_grid_.get(); }
         [[nodiscard]] d2dui::D2duiLabeledValueGrid& calibration_grid() noexcept { return calibration_grid_.get(); }
+
+        inline static constexpr size_t kMouseKeyEventBufferSize = 512;
+        boost::circular_buffer<rawinput::LowLatencyInput::KeyEvent> mouse_event_buffer_{kMouseKeyEventBufferSize};
 
     private:
         HRESULT update_common(const PageLayout& layout, const ViewSnapshot& snapshot);

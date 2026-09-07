@@ -181,7 +181,7 @@ namespace {
         }
     }
 
-    bool pull_msg_key(uint16_t recording_key) noexcept {
+    bool pull_msg_key(UiState& state, uint16_t recording_key) noexcept {
         static constexpr size_t kQueueSize = 1024;
         static rawinput::LowLatencyInput::KeyEvent queue[kQueueSize];
         const size_t count = rawinput::LowLatencyInput::pop_events<kQueueSize>(queue);
@@ -189,10 +189,17 @@ namespace {
 
         for (size_t index = 0; index < count; ++index) {
             const rawinput::LowLatencyInput::KeyEvent& event = queue[index];
-            if (event.down == 0 || !matches_recording_key(recording_key, event.vkey)) continue;
 
-            (void)app_func::toggle_recording();
-            changed = true;
+            // Transport mouse button events to the main view's buffer for later processing.
+            if (0x01 <= event.vkey && event.vkey <= 0x06) {
+                state.main_view.mouse_event_buffer_.push_back(event);
+            }
+
+            // Check for the configured recording key and toggle recording state on press.
+            if (event.down == 1 && matches_recording_key(recording_key, event.vkey)) {
+                (void)app_func::toggle_recording();
+                changed = true;
+            }
         }
 
         return changed;
@@ -212,7 +219,7 @@ namespace {
         if (state.user_config == nullptr) return false;
 
         // Apply recording-key state transitions before attributing the pending mouse snapshot.
-        const bool key_changed = pull_msg_key(state.user_config->recording_key);
+        const bool key_changed = pull_msg_key(state, state.user_config->recording_key);
         const bool mouse_changed = pull_msg_mouse();
         return key_changed || (app_data::on_recording_ != 0 && mouse_changed);
     }

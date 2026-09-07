@@ -79,15 +79,31 @@ namespace d2dui {
         // Register a mouse event handler for the component.
         template <D2duiMouseEvent Event, typename Handler>
             requires ValidD2duiMouseEvent<Event> && std::invocable<Handler&, const D2duiMouseEventParam&>
-        void register_mouse_event_handler(Handler&& handler) {
+        void register_mouse_event_handler(Handler&& handler) noexcept {
             mouse_event_handlers_[static_cast<int32_t>(Event)] = std::forward<Handler>(handler);
         }
 
         // Unregister a mouse event handler for the component.
         template <D2duiMouseEvent Event>
             requires ValidD2duiMouseEvent<Event>
-        bool unregister_mouse_event_handler() {
+        bool unregister_mouse_event_handler() noexcept {
             return mouse_event_handlers_.erase(static_cast<int32_t>(Event)) != 0;
+        }
+
+        // Invoke the registered mouse event handler for the component.
+        bool respond_mouse_event(D2duiMouseEvent event, const D2duiMouseEventParam& param) noexcept {
+            const auto handler = mouse_event_handlers_.find(static_cast<int32_t>(event));
+            if (handler == mouse_event_handlers_.end()) {
+                return false;
+            }
+
+            try {
+                handler->second(param);
+            } catch (...) {
+                return false;
+            }
+            
+            return true;
         }
 
     protected:
@@ -97,6 +113,7 @@ namespace d2dui {
 
     private:
         std::unordered_map<int32_t, std::function<void(const D2duiMouseEventParam&)>> mouse_event_handlers_;
+
     };
 
 } // namespace d2dui
