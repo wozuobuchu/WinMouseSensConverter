@@ -5,6 +5,7 @@
 
 #include <Windows.h>
 
+#include <bitset>
 #include <concepts>
 #include <cstdint>
 #include <functional>
@@ -51,6 +52,8 @@ namespace d2dui {
         SIZE
     };
 
+    using MouseKeyStateBitset = std::bitset<static_cast<size_t>(D2duiMouseEvent::SIZE)>; // 0: up, 1: down
+
     template <D2duiMouseEvent Event>
     concept ValidD2duiMouseEvent =
         static_cast<int32_t>(Event) >= 0 &&
@@ -93,7 +96,7 @@ namespace d2dui {
         }
 
         // Invoke the registered mouse event handler for the component.
-        bool respond_mouse_event(D2duiMouseEvent event, const D2duiMouseEventParam& param) noexcept {
+        bool respond_mouse_event(const D2duiMouseEvent event, const D2duiMouseEventParam param) noexcept {
             const auto handler = mouse_event_handlers_.find(static_cast<int32_t>(event));
             if (handler == mouse_event_handlers_.end()) {
                 return false;
