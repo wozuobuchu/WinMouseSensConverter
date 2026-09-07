@@ -17,7 +17,9 @@ context.initialize(hwnd, dpi);
 
 d2dui::D2duiSystemRender common;
 d2dui::D2duiSystemRender page;
-auto& status = common.emplace_component<d2dui::D2duiStatusBar>();
+auto status = std::make_shared<d2dui::D2duiStatusBar>();
+common.register_component(status);
+status->set_checked(true);
 
 if (context.begin_frame({0xF4F7FB, 1.0f}) == S_OK) {
     const HRESULT common_result = common.draw(context);
@@ -27,7 +29,7 @@ if (context.begin_frame({0xF4F7FB, 1.0f}) == S_OK) {
 }
 ```
 
-`D2duiSystemRender` owns registered components with `std::unique_ptr`. `register_component` and `emplace_component` return references to the stored objects. Those references remain valid across render-queue vector reallocations, but become invalid when the component is unregistered, the queue is cleared, or the renderer is destroyed.
+`D2duiSystemRender` stores `std::shared_ptr<D2duiComponentsBase>` entries. Create components with `std::make_shared`, retain the typed pointer externally, and pass it to `register_component`, which returns `void` and rejects null pointers with `std::invalid_argument`. `unregister_component` accepts a shared pointer and removes the first entry with the same object address, returning `true` on removal or `false` for null or absent objects. Duplicate registrations append separate entries. Unregistering, clearing, or destroying a queue releases only its ownership: external shared pointers keep components alive, and components are destroyed when their last shared owner releases them. Queue growth does not invalidate component pointers.
 
 The component base interface provides `get_bounds()`, `resize()`, and `draw()` for layout and rendering. Each render queue draws all registered components in registration order and returns immediately if a component fails to draw. The host selects which queues to draw and updates component state through setters such as `set_checked()`. D2DUILIB does not perform hit testing or mouse-message routing.
 

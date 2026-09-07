@@ -103,20 +103,25 @@ namespace ui::view {
     }
 
     MainView::MainView()
-        : status_bar_(common_render_.emplace_component<d2dui::D2duiStatusBar>()),
-          measurement_header_(measurement_render_.emplace_component<d2dui::D2duiSegmentedHeader>()),
-          measurement_grid_(measurement_render_.emplace_component<d2dui::D2duiLabeledValueGrid>()),
-          calibration_header_(calibration_render_.emplace_component<d2dui::D2duiSegmentedHeader>()),
-          calibration_grid_(calibration_render_.emplace_component<d2dui::D2duiLabeledValueGrid>()) {
-        measurement_header_.get().set_leading_text(L"Measurement");
-        measurement_header_.get().set_cells({L"REFDPI 800", L"UNIT cm"});
-        measurement_grid_.get().set_items({
+        : status_bar_(std::make_shared<d2dui::D2duiStatusBar>()),
+          measurement_header_(std::make_shared<d2dui::D2duiSegmentedHeader>()),
+          measurement_grid_(std::make_shared<d2dui::D2duiLabeledValueGrid>()),
+          calibration_header_(std::make_shared<d2dui::D2duiSegmentedHeader>()),
+          calibration_grid_(std::make_shared<d2dui::D2duiLabeledValueGrid>()) {
+        common_render_.register_component(status_bar_);
+        measurement_render_.register_component(measurement_header_);
+        measurement_render_.register_component(measurement_grid_);
+        calibration_render_.register_component(calibration_header_);
+        calibration_render_.register_component(calibration_grid_);
+        measurement_header_->set_leading_text(L"Measurement");
+        measurement_header_->set_cells({L"REFDPI 800", L"UNIT cm"});
+        measurement_grid_->set_items({
             {L"X \x00B7 HORIZONTAL", L"0.000", d2dui::D2duiText::no_suffix},
             {L"Y \x00B7 VERTICAL", L"0.000", d2dui::D2duiText::no_suffix},
         });
-        calibration_header_.get().set_leading_text(L"Calibration");
-        calibration_header_.get().set_cells({L"CALDIS 10.000", L"UNIT cm"});
-        calibration_grid_.get().set_items({
+        calibration_header_->set_leading_text(L"Calibration");
+        calibration_header_->set_cells({L"CALDIS 10.000", L"UNIT cm"});
+        calibration_grid_->set_items({
             {L"CALIBRATED DPI", L"\x2014 DPI", 2},
         });
     }
@@ -145,7 +150,7 @@ namespace ui::view {
     }
 
     HRESULT MainView::update_common(const PageLayout& layout, const ViewSnapshot& snapshot) {
-        auto& status = status_bar_.get();
+        auto& status = *status_bar_;
         status.resize(layout.footer_bounds, layout.scale);
         status.set_badge_text(snapshot.recording_key_name);
         status.set_checked(snapshot.recording);
@@ -162,11 +167,11 @@ namespace ui::view {
         if (format_distance_value(snapshot.accumulated_dx, snapshot.reference_dpi, snapshot.unit, x_value, std::size(x_value)) <= 0) return E_FAIL;
         if (format_distance_value(snapshot.accumulated_dy, snapshot.reference_dpi, snapshot.unit, y_value, std::size(y_value)) <= 0) return E_FAIL;
 
-        auto& header = measurement_header_.get();
+        auto& header = *measurement_header_;
         header.resize(layout.header_bounds, layout.scale);
         header.set_cell_text(0, reference_dpi);
         header.set_cell_text(1, unit);
-        auto& grid = measurement_grid_.get();
+        auto& grid = *measurement_grid_;
         grid.resize(layout.data_bounds, layout.scale);
         grid.set_value(0, x_value);
         grid.set_value(1, y_value);
@@ -189,11 +194,11 @@ namespace ui::view {
         const wchar_t* separator = std::wcschr(value, L' ');
         if (separator == nullptr) return E_FAIL;
 
-        auto& header = calibration_header_.get();
+        auto& header = *calibration_header_;
         header.resize(layout.header_bounds, layout.scale);
         header.set_cell_text(0, calibration_distance);
         header.set_cell_text(1, unit);
-        auto& grid = calibration_grid_.get();
+        auto& grid = *calibration_grid_;
         grid.resize(layout.data_bounds, layout.scale);
         grid.set_value(0, value, static_cast<UINT32>(separator - value) + 1);
         return S_OK;

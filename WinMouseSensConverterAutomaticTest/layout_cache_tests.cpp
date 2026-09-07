@@ -135,15 +135,79 @@ namespace automatic_test {
             TEST_EXPECT_NEAR(runner, ui::view::calculate_page_layout(800.0f, 450.0f).scale, 1.00f, 0.001f);
         });
 
-        runner.run("system renderer returns stable registered references", [&] {
+        runner.run("system renderer shares ownership across queue growth and removal", [&] {
             d2dui::D2duiSystemRender render;
-            auto& first = render.emplace_component<d2dui::D2duiSwitch>();
-            d2dui::D2duiSwitch* first_address = &first;
-            for (int index = 0; index < 64; ++index) render.emplace_component<d2dui::D2duiSwitch>();
-            TEST_EXPECT(runner, &first == first_address);
+            auto first = std::make_shared<d2dui::D2duiSwitch>();
+            const std::weak_ptr<d2dui::D2duiSwitch> observer = first;
+            render.register_component(first);
+            first.reset();
+            for (int index = 0; index < 64; ++index) render.register_component(std::make_shared<d2dui::D2duiSwitch>());
+            first = observer.lock();
+            TEST_EXPECT(runner, first != nullptr);
             TEST_EXPECT(runner, render.size() == 65);
             TEST_EXPECT(runner, render.unregister_component(first));
             TEST_EXPECT(runner, render.size() == 64);
+            if (first) {
+                first->set_checked(true);
+                TEST_EXPECT(runner, first->checked());
+            }
+            TEST_EXPECT(runner, !render.unregister_component(first));
+            first.reset();
+            TEST_EXPECT(runner, observer.expired());
+        });
+
+        runner.run("system renderer clear and destruction release only queue ownership", [&] {
+            for (const bool clear_queue : {false, true}) {
+                auto external = std::make_shared<d2dui::D2duiSwitch>();
+                const std::weak_ptr<d2dui::D2duiSwitch> external_observer = external;
+                std::weak_ptr<d2dui::D2duiSwitch> queue_observer;
+                {
+                    d2dui::D2duiSystemRender render;
+                    render.register_component(external);
+                    auto queue_only = std::make_shared<d2dui::D2duiSwitch>();
+                    queue_observer = queue_only;
+                    render.register_component(queue_only);
+                    queue_only.reset();
+                    TEST_EXPECT(runner, !queue_observer.expired());
+                    if (clear_queue) {
+                        render.clear();
+                        TEST_EXPECT(runner, render.size() == 0);
+                        TEST_EXPECT(runner, queue_observer.expired());
+                        external->set_checked(true);
+                        TEST_EXPECT(runner, external->checked());
+                    }
+                }
+                TEST_EXPECT(runner, queue_observer.expired());
+                TEST_EXPECT(runner, !external_observer.expired());
+                external->set_checked(true);
+                TEST_EXPECT(runner, external->checked());
+                external.reset();
+                TEST_EXPECT(runner, external_observer.expired());
+            }
+        });
+
+        runner.run("system renderer rejects null and removes duplicate entries individually", [&] {
+            d2dui::D2duiSystemRender render;
+            bool rejected_null = false;
+            try {
+                render.register_component(nullptr);
+            } catch (const std::invalid_argument&) {
+                rejected_null = true;
+            }
+            TEST_EXPECT(runner, rejected_null);
+            TEST_EXPECT(runner, render.size() == 0);
+            auto component = std::make_shared<d2dui::D2duiSwitch>();
+            auto absent = std::make_shared<d2dui::D2duiSwitch>();
+            render.register_component(component);
+            render.register_component(component);
+            TEST_EXPECT(runner, !render.unregister_component(nullptr));
+            TEST_EXPECT(runner, !render.unregister_component(absent));
+            TEST_EXPECT(runner, render.size() == 2);
+            TEST_EXPECT(runner, render.unregister_component(component));
+            TEST_EXPECT(runner, render.size() == 1);
+            TEST_EXPECT(runner, render.unregister_component(component));
+            TEST_EXPECT(runner, render.size() == 0);
+            TEST_EXPECT(runner, !render.unregister_component(component));
         });
 
         runner.run("switch state is explicitly controlled", [&] {
@@ -237,7 +301,7 @@ namespace automatic_test {
         runner.run("renderer submits only inside an active frame", [&] {
             WindowFixture fixture;
             d2dui::D2duiSystemRender render;
-            render.emplace_component<d2dui::D2duiSwitch>();
+            render.register_component(std::make_shared<d2dui::D2duiSwitch>());
             TEST_EXPECT(runner, render.draw(fixture.context) == D2DERR_WRONG_STATE);
             TEST_EXPECT(runner, fixture.context.begin_frame({0xFFFFFF, 1.0f}) == S_OK);
             TEST_EXPECT(runner, SUCCEEDED(render.draw(fixture.context)));

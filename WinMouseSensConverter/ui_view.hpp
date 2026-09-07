@@ -13,7 +13,7 @@
 #include "D2DUILIB/D2DUILIB_INTERFACE/d2dui_system_render.hpp"
 
 #include <cstddef>
-#include <functional>
+#include <memory>
 #include <string_view>
 
 #include <boost/circular_buffer.hpp>
@@ -62,8 +62,8 @@ namespace ui::view {
         [[nodiscard]] d2dui::D2duiSystemRender& common_render() noexcept { return common_render_; }
         [[nodiscard]] d2dui::D2duiSystemRender& measurement_render() noexcept { return measurement_render_; }
         [[nodiscard]] d2dui::D2duiSystemRender& calibration_render() noexcept { return calibration_render_; }
-        [[nodiscard]] d2dui::D2duiLabeledValueGrid& measurement_grid() noexcept { return measurement_grid_.get(); }
-        [[nodiscard]] d2dui::D2duiLabeledValueGrid& calibration_grid() noexcept { return calibration_grid_.get(); }
+        [[nodiscard]] d2dui::D2duiLabeledValueGrid& measurement_grid() noexcept { return *measurement_grid_; }
+        [[nodiscard]] d2dui::D2duiLabeledValueGrid& calibration_grid() noexcept { return *calibration_grid_; }
 
         inline static constexpr size_t kMouseKeyEventBufferSize = 512;
         boost::circular_buffer<rawinput::LowLatencyInput::KeyEvent> mouse_event_buffer_{kMouseKeyEventBufferSize};
@@ -77,11 +77,11 @@ namespace ui::view {
         d2dui::D2duiSystemRender measurement_render_;
         d2dui::D2duiSystemRender calibration_render_;
 
-        std::reference_wrapper<d2dui::D2duiStatusBar> status_bar_;
-        std::reference_wrapper<d2dui::D2duiSegmentedHeader> measurement_header_;
-        std::reference_wrapper<d2dui::D2duiLabeledValueGrid> measurement_grid_;
-        std::reference_wrapper<d2dui::D2duiSegmentedHeader> calibration_header_;
-        std::reference_wrapper<d2dui::D2duiLabeledValueGrid> calibration_grid_;
+        std::shared_ptr<d2dui::D2duiStatusBar> status_bar_;
+        std::shared_ptr<d2dui::D2duiSegmentedHeader> measurement_header_;
+        std::shared_ptr<d2dui::D2duiLabeledValueGrid> measurement_grid_;
+        std::shared_ptr<d2dui::D2duiSegmentedHeader> calibration_header_;
+        std::shared_ptr<d2dui::D2duiLabeledValueGrid> calibration_grid_;
     };
 
 } // namespace ui::view
