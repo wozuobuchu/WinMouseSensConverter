@@ -8,6 +8,7 @@
 #include <concepts>
 #include <cstdint>
 #include <functional>
+#include <memory>
 #include <unordered_map>
 #include <utility>
 
@@ -80,7 +81,8 @@ namespace d2dui {
         template <D2duiMouseEvent Event, typename Handler>
             requires ValidD2duiMouseEvent<Event> && std::invocable<Handler&, const D2duiMouseEventParam&>
         void register_mouse_event_handler(Handler&& handler) noexcept {
-            mouse_event_handlers_[static_cast<int32_t>(Event)] = std::forward<Handler>(handler);
+            mouse_event_handlers_[static_cast<int32_t>(Event)] =
+                std::make_shared<std::function<void(const D2duiMouseEventParam&)>>(std::forward<Handler>(handler));
         }
 
         // Unregister a mouse event handler for the component.
@@ -98,7 +100,9 @@ namespace d2dui {
             }
 
             try {
-                handler->second(param);
+                // Keep the same callable alive if it unregisters or replaces itself.
+                const auto active_handler = handler->second;
+                (*active_handler)(param);
             } catch (...) {
                 return false;
             }
@@ -112,7 +116,7 @@ namespace d2dui {
         bool dirty_ = true;
 
     private:
-        std::unordered_map<int32_t, std::function<void(const D2duiMouseEventParam&)>> mouse_event_handlers_;
+        std::unordered_map<int32_t, std::shared_ptr<std::function<void(const D2duiMouseEventParam&)>>> mouse_event_handlers_;
 
     };
 

@@ -396,16 +396,16 @@ Requirements:
 - Visual Studio with MSBuild, the MSVC `v145` C++ toolset, Windows 10 SDK, and **Desktop development with C++**.
 - `vswhere.exe`, normally installed by Visual Studio Installer.
 - [vcpkg](https://github.com/microsoft/vcpkg) using classic MSBuild integration.
-- Boost.Lockfree headers for the `x64-windows` triplet.
+- Boost.Lockfree and Boost.CircularBuffer headers for the `x64-windows` triplet.
 
-The repository intentionally has no `vcpkg.json`. Install and integrate its only third-party build dependency when needed:
+The repository intentionally has no `vcpkg.json`. Install and integrate its third-party build dependencies when needed:
 
 ```powershell
-vcpkg install boost-lockfree:x64-windows
+vcpkg install boost-lockfree:x64-windows boost-circular-buffer:x64-windows
 vcpkg integrate install
 ```
 
-Direct2D and DirectWrite come from the Windows SDK through `d2d1.lib` and `dwrite.lib`. Boost.Lockfree is header-only for this application, so there is no additional third-party runtime-library requirement.
+Direct2D and DirectWrite come from the Windows SDK through `d2d1.lib` and `dwrite.lib`. Boost.Lockfree and Boost.CircularBuffer are header-only for this application, so there is no additional third-party runtime-library requirement.
 
 Run from the repository root and keep `-NoRestore` for normal builds after dependencies are installed:
 
@@ -837,16 +837,16 @@ Measurement 数值使用三位小数，把换算后绝对值小于 `0.0005` 的�
 - Visual Studio，并安装 MSBuild、MSVC `v145` C++ 工具集、Windows 10 SDK 和**使用 C++ 的桌面开发**工作负载。
 - 通常由 Visual Studio Installer 安装的 `vswhere.exe`。
 - 使用经典 MSBuild 集成的 [vcpkg](https://github.com/microsoft/vcpkg)。
-- `x64-windows` triplet 的 Boost.Lockfree 头文件。
+- `x64-windows` triplet 的 Boost.Lockfree 和 Boost.CircularBuffer 头文件。
 
-仓库特意不提供 `vcpkg.json`。缺少依赖时，安装并集成唯一的第三方构建依赖：
+仓库特意不提供 `vcpkg.json`。缺少依赖时，安装并集成第三方构建依赖：
 
 ```powershell
-vcpkg install boost-lockfree:x64-windows
+vcpkg install boost-lockfree:x64-windows boost-circular-buffer:x64-windows
 vcpkg integrate install
 ```
 
-Direct2D 和 DirectWrite 由 Windows SDK 通过 `d2d1.lib`、`dwrite.lib` 提供。Boost.Lockfree 在本程序中作为头文件依赖使用，因此没有额外第三方运行时库要求。
+Direct2D 和 DirectWrite 由 Windows SDK 通过 `d2d1.lib`、`dwrite.lib` 提供。Boost.Lockfree 和 Boost.CircularBuffer 在本程序中作为头文件依赖使用，因此没有额外第三方运行时库要求。
 
 在仓库根目录运行；依赖已安装后，常规构建保留 `-NoRestore`：
 

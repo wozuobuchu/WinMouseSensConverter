@@ -51,12 +51,12 @@ Use `-Clean` only when a clean rebuild is needed. Keep `-NoRestore` for normal l
 - Visual Studio with MSBuild, the MSVC `v145` C++ toolset, and the Windows 10 SDK.
 - The Visual Studio "Desktop development with C++" workload supplies the required compiler, resource compiler, linker, Windows headers, Direct2D, DirectWrite, and WRL support.
 - PowerShell and `vswhere.exe`; `build_windows.ps1` uses them to locate and initialize the latest suitable Visual Studio installation.
-- Boost.Lockfree headers for `boost/lockfree/spsc_queue.hpp`, installed for the `x64-windows` vcpkg triplet.
+- Boost.Lockfree and Boost.CircularBuffer headers for `boost/lockfree/spsc_queue.hpp` and `boost/circular_buffer.hpp`, installed for the `x64-windows` vcpkg triplet.
 
 This repository currently uses classic vcpkg integration and does not contain a `vcpkg.json` manifest. Install and integrate Boost before building if it is missing:
 
 ```powershell
-vcpkg install boost-lockfree:x64-windows
+vcpkg install boost-lockfree:x64-windows boost-circular-buffer:x64-windows
 vcpkg integrate install
 ```
 

@@ -44,6 +44,48 @@ namespace automatic_test {
     } // namespace
 
     void add_layout_cache_tests(TestRunner& runner) {
+        runner.run("mouse callbacks survive self removal and replacement", [&] {
+            constexpr auto event = d2dui::D2duiMouseEvent::MOUSE_LEFT_CLICK_ENTER;
+            for (const bool replace : {false, true}) {
+                d2dui::D2duiSwitch component;
+                auto lifetime = std::make_shared<int>(42);
+                const std::weak_ptr<int> observer = lifetime;
+                bool alive_during_callback = false;
+                int replacement_calls = 0;
+                component.register_mouse_event_handler<event>(
+                    [&, lifetime](const d2dui::D2duiMouseEventParam&) {
+                        // Copy external references before removal so the regression test
+                        // can observe premature destruction without accessing freed captures.
+                        auto* alive = &alive_during_callback;
+                        const auto* weak = &observer;
+                        if (replace) {
+                            component.register_mouse_event_handler<event>(
+                                [&replacement_calls](const d2dui::D2duiMouseEventParam&) { ++replacement_calls; });
+                        } else {
+                            component.unregister_mouse_event_handler<event>();
+                        }
+                        *alive = !weak->expired();
+                    });
+                lifetime.reset();
+                TEST_EXPECT(runner, component.respond_mouse_event(event, {}));
+                TEST_EXPECT(runner, alive_during_callback);
+                TEST_EXPECT(runner, observer.expired());
+                TEST_EXPECT(runner, component.respond_mouse_event(event, {}) == replace);
+                TEST_EXPECT(runner, replacement_calls == (replace ? 1 : 0));
+            }
+        });
+
+        runner.run("mouse callbacks retain mutable state between events", [&] {
+            d2dui::D2duiSwitch component;
+            constexpr auto event = d2dui::D2duiMouseEvent::MOUSE_LEFT_CLICK_ENTER;
+            int observed = 0;
+            component.register_mouse_event_handler<event>(
+                [count = 0, &observed](const d2dui::D2duiMouseEventParam&) mutable { observed = ++count; });
+            TEST_EXPECT(runner, component.respond_mouse_event(event, {}));
+            TEST_EXPECT(runner, component.respond_mouse_event(event, {}));
+            TEST_EXPECT(runner, observed == 2);
+        });
+
         runner.run("distance formatting omits repeated units and compacts extremes", [&] {
             wchar_t text[128]{};
             TEST_EXPECT(runner, ui::view::format_distance_value(800.0, 800, config::OutputUnit::cm, text, std::size(text)) > 0);
