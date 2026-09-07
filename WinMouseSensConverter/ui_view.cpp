@@ -221,6 +221,29 @@ namespace ui::view {
                         ? update_calibration(layout, snapshot)
                         : update_measurement(layout, snapshot);
                 }
+                if (SUCCEEDED(content_result)) {
+                    const auto ui_dispatch_mouse_events = [this, &context, &snapshot]() noexcept {
+                        common_render_.dispatch_mouse_events(context.hwnd(), context.render_target(), mouse_key_states_);
+                        if (snapshot.mode == config::AppMode::calibration) {
+                            calibration_render_.dispatch_mouse_events(context.hwnd(), context.render_target(), mouse_key_states_);
+                        } else {
+                            measurement_render_.dispatch_mouse_events(context.hwnd(), context.render_target(), mouse_key_states_);
+                        }
+                    };
+
+                    bool dispatched = false;
+                    while (!mouse_event_buffer_.empty()) {
+                        const rawinput::LowLatencyInput::KeyEvent event = mouse_event_buffer_.front();
+                        mouse_event_buffer_.pop_front();
+                        const size_t state_index = static_cast<size_t>(event.vkey) * 3;
+                        if (state_index >= mouse_key_states_.size()) continue;
+                        mouse_key_states_.set(state_index, event.down != 0);
+                        ui_dispatch_mouse_events();
+                        dispatched = true;
+                    }
+
+                    if (!dispatched) ui_dispatch_mouse_events();
+                }
                 if (SUCCEEDED(content_result)) content_result = common_render_.draw(context);
                 if (SUCCEEDED(content_result)) {
                     content_result = snapshot.mode == config::AppMode::calibration

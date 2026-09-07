@@ -82,6 +82,7 @@ namespace ui::view {
         std::shared_ptr<d2dui::D2duiLabeledValueGrid> measurement_grid_;
         std::shared_ptr<d2dui::D2duiSegmentedHeader> calibration_header_;
         std::shared_ptr<d2dui::D2duiLabeledValueGrid> calibration_grid_;
+        d2dui::MouseKeyStateBitset mouse_key_states_{};
     };
 
 } // namespace ui::view
