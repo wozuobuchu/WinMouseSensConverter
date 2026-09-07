@@ -5,18 +5,15 @@
 
 #include "config.hpp"
 
-#include "SYS/low_latency_input.hpp"
-
 #include "D2DUILIB/D2DUILIB_COMPONENT/d2dui_labeled_value_grid.hpp"
 #include "D2DUILIB/D2DUILIB_COMPONENT/d2dui_segmented_header.hpp"
 #include "D2DUILIB/D2DUILIB_COMPONENT/d2dui_status_bar.hpp"
 #include "D2DUILIB/D2DUILIB_INTERFACE/d2dui_system_render.hpp"
 
 #include <cstddef>
+#include <deque>
 #include <memory>
 #include <string_view>
-
-#include <boost/circular_buffer.hpp>
 
 namespace ui::view {
 
@@ -65,13 +62,16 @@ namespace ui::view {
         [[nodiscard]] d2dui::D2duiLabeledValueGrid& measurement_grid() noexcept { return *measurement_grid_; }
         [[nodiscard]] d2dui::D2duiLabeledValueGrid& calibration_grid() noexcept { return *calibration_grid_; }
 
-        inline static constexpr size_t kMouseKeyEventBufferSize = 512;
-        boost::circular_buffer<rawinput::LowLatencyInput::KeyEvent> mouse_event_buffer_{kMouseKeyEventBufferSize};
+        // Input layout and callbacks do not open a render frame. Dimensions are DIPs.
+        void update_layout(float width, float height) noexcept;
+        bool dispatch_mouse_events(config::AppMode mode, d2dui::MouseInput input) noexcept;
+        // Mode changes cancel only the outgoing mode; window cancellation includes common.
+        bool cancel_mouse_events(config::AppMode mode, bool include_common = true) noexcept;
 
     private:
-        HRESULT update_common(const PageLayout& layout, const ViewSnapshot& snapshot);
-        HRESULT update_measurement(const PageLayout& layout, const ViewSnapshot& snapshot);
-        HRESULT update_calibration(const PageLayout& layout, const ViewSnapshot& snapshot);
+        HRESULT update_common(const ViewSnapshot& snapshot);
+        HRESULT update_measurement(const ViewSnapshot& snapshot);
+        HRESULT update_calibration(const ViewSnapshot& snapshot);
 
         d2dui::D2duiSystemRender common_render_;
         d2dui::D2duiSystemRender measurement_render_;
@@ -82,7 +82,13 @@ namespace ui::view {
         std::shared_ptr<d2dui::D2duiLabeledValueGrid> measurement_grid_;
         std::shared_ptr<d2dui::D2duiSegmentedHeader> calibration_header_;
         std::shared_ptr<d2dui::D2duiLabeledValueGrid> calibration_grid_;
-        d2dui::MouseKeyStateBitset mouse_key_states_{};
+        struct PendingMouseInput {
+            config::AppMode mode;
+            d2dui::MouseInput input;
+        };
+        std::deque<PendingMouseInput> pending_mouse_inputs_;
+        bool dispatching_mouse_ = false;
+        size_t interaction_epoch_ = 0;
     };
 
 } // namespace ui::view

@@ -29,6 +29,8 @@
     <ClCompile Include="layout_cache_tests.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="mouse_dispatch_tests.cpp"><Filter>Source Files</Filter></ClCompile>
+    <ClCompile Include="ui_input_tests.cpp"><Filter>Source Files</Filter></ClCompile>
     <ClCompile Include="test_main.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -38,5 +40,6 @@
   </ItemGroup>
   <ItemGroup>
     <None Include="run_tests.ps1" />
+    <Manifest Include="WinMouseSensConverterAutomaticTest.manifest" />
   </ItemGroup>
 </Project>

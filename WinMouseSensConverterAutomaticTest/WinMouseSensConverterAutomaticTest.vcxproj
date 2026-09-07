@@ -63,7 +63,7 @@
       <SubSystem>Console</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <UACExecutionLevel>AsInvoker</UACExecutionLevel>
-      <AdditionalDependencies>d2d1.lib;dwrite.lib;ole32.lib;shell32.lib;user32.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>comctl32.lib;uxtheme.lib;d2d1.lib;dwrite.lib;ole32.lib;shell32.lib;user32.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
@@ -89,12 +89,15 @@
     <ClCompile Include="core_logic_tests.cpp" />
     <ClCompile Include="layout_cache_tests.cpp" />
     <ClCompile Include="test_main.cpp" />
+    <ClCompile Include="mouse_dispatch_tests.cpp" />
+    <ClCompile Include="ui_input_tests.cpp" />
     <ClCompile Include="..\WinMouseSensConverter\ui_view.cpp">
       <Link>Production\ui_view.cpp</Link>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <None Include="run_tests.ps1" />
+    <Manifest Include="WinMouseSensConverterAutomaticTest.manifest" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

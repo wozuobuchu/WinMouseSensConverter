@@ -49,6 +49,7 @@ namespace d2dui {
         MOUSE_X2_CLICK_ON,
         MOUSE_X2_CLICK_LEAVE,
 
+        MOUSE_CANCEL, // Interaction aborted; never commit a click on cancellation.
         SIZE
     };
 

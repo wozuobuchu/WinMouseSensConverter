@@ -149,15 +149,14 @@ namespace ui::view {
         }
     }
 
-    HRESULT MainView::update_common(const PageLayout& layout, const ViewSnapshot& snapshot) {
+    HRESULT MainView::update_common(const ViewSnapshot& snapshot) {
         auto& status = *status_bar_;
-        status.resize(layout.footer_bounds, layout.scale);
         status.set_badge_text(snapshot.recording_key_name);
         status.set_checked(snapshot.recording);
         return S_OK;
     }
 
-    HRESULT MainView::update_measurement(const PageLayout& layout, const ViewSnapshot& snapshot) {
+    HRESULT MainView::update_measurement(const ViewSnapshot& snapshot) {
         wchar_t reference_dpi[64]{};
         wchar_t unit[64]{};
         wchar_t x_value[128]{};
@@ -168,17 +167,15 @@ namespace ui::view {
         if (format_distance_value(snapshot.accumulated_dy, snapshot.reference_dpi, snapshot.unit, y_value, std::size(y_value)) <= 0) return E_FAIL;
 
         auto& header = *measurement_header_;
-        header.resize(layout.header_bounds, layout.scale);
         header.set_cell_text(0, reference_dpi);
         header.set_cell_text(1, unit);
         auto& grid = *measurement_grid_;
-        grid.resize(layout.data_bounds, layout.scale);
         grid.set_value(0, x_value);
         grid.set_value(1, y_value);
         return S_OK;
     }
 
-    HRESULT MainView::update_calibration(const PageLayout& layout, const ViewSnapshot& snapshot) {
+    HRESULT MainView::update_calibration(const ViewSnapshot& snapshot) {
         wchar_t calibration_distance[192]{};
         wchar_t unit[64]{};
         wchar_t value[128]{};
@@ -195,13 +192,64 @@ namespace ui::view {
         if (separator == nullptr) return E_FAIL;
 
         auto& header = *calibration_header_;
-        header.resize(layout.header_bounds, layout.scale);
         header.set_cell_text(0, calibration_distance);
         header.set_cell_text(1, unit);
         auto& grid = *calibration_grid_;
-        grid.resize(layout.data_bounds, layout.scale);
         grid.set_value(0, value, static_cast<UINT32>(separator - value) + 1);
         return S_OK;
+    }
+
+    void MainView::update_layout(float width, float height) noexcept {
+        const auto layout = calculate_page_layout(width, height);
+        status_bar_->resize(layout.footer_bounds, layout.scale);
+        measurement_header_->resize(layout.header_bounds, layout.scale);
+        calibration_header_->resize(layout.header_bounds, layout.scale);
+        measurement_grid_->resize(layout.data_bounds, layout.scale);
+        calibration_grid_->resize(layout.data_bounds, layout.scale);
+    }
+
+    bool MainView::dispatch_mouse_events(config::AppMode mode, d2dui::MouseInput input) noexcept {
+        if (input.kind == d2dui::MouseInputKind::cancel) return cancel_mouse_events(mode);
+        // Serialize across BOTH queues as well as within each renderer.
+        if (dispatching_mouse_) {
+            try { pending_mouse_inputs_.push_back({mode, input}); }
+            catch (...) { return cancel_mouse_events(mode); }
+            return false;
+        }
+        dispatching_mouse_ = true;
+        bool handled = false;
+        for (;;) {
+            const auto epoch = interaction_epoch_;
+            handled = common_render_.dispatch_mouse_events(input) || handled;
+            if (epoch == interaction_epoch_) {
+                auto& render = mode == config::AppMode::calibration ? calibration_render_ : measurement_render_;
+                handled = render.dispatch_mouse_events(input) || handled;
+            }
+            if (pending_mouse_inputs_.empty()) break;
+            const auto next = pending_mouse_inputs_.front();
+            pending_mouse_inputs_.pop_front();
+            mode = next.mode;
+            input = next.input;
+        }
+        dispatching_mouse_ = false;
+        return handled;
+    }
+
+    bool MainView::cancel_mouse_events(config::AppMode mode, bool include_common) noexcept {
+        const bool was_dispatching = dispatching_mouse_;
+        dispatching_mouse_ = true;
+        ++interaction_epoch_;
+        pending_mouse_inputs_.clear();
+        auto& render = mode == config::AppMode::calibration ? calibration_render_ : measurement_render_;
+        bool handled = render.cancel_mouse_events();
+        if (include_common) handled = common_render_.cancel_mouse_events() || handled;
+        dispatching_mouse_ = was_dispatching;
+        if (!was_dispatching && !pending_mouse_inputs_.empty()) {
+            const auto next = pending_mouse_inputs_.front();
+            pending_mouse_inputs_.pop_front();
+            handled = dispatch_mouse_events(next.mode, next.input) || handled;
+        }
+        return handled;
     }
 
     HRESULT MainView::render(d2dui::D2duiContext& context, const ViewSnapshot& snapshot) noexcept {
@@ -215,34 +263,12 @@ namespace ui::view {
             if (layout.content_width <= 1.0f || layout.data_bounds.bottom <= layout.data_bounds.top) {
                 content_result = E_FAIL;
             } else {
-                content_result = update_common(layout, snapshot);
+                update_layout(size.width, size.height);
+                content_result = update_common(snapshot);
                 if (SUCCEEDED(content_result)) {
                     content_result = snapshot.mode == config::AppMode::calibration
-                        ? update_calibration(layout, snapshot)
-                        : update_measurement(layout, snapshot);
-                }
-                if (SUCCEEDED(content_result)) {
-                    const auto ui_dispatch_mouse_events = [this, &context, &snapshot]() noexcept {
-                        common_render_.dispatch_mouse_events(context.hwnd(), context.render_target(), mouse_key_states_);
-                        if (snapshot.mode == config::AppMode::calibration) {
-                            calibration_render_.dispatch_mouse_events(context.hwnd(), context.render_target(), mouse_key_states_);
-                        } else {
-                            measurement_render_.dispatch_mouse_events(context.hwnd(), context.render_target(), mouse_key_states_);
-                        }
-                    };
-
-                    bool dispatched = false;
-                    while (!mouse_event_buffer_.empty()) {
-                        const rawinput::LowLatencyInput::KeyEvent event = mouse_event_buffer_.front();
-                        mouse_event_buffer_.pop_front();
-                        const size_t state_index = static_cast<size_t>(event.vkey) * 3;
-                        if (state_index >= mouse_key_states_.size()) continue;
-                        mouse_key_states_.set(state_index, event.down != 0);
-                        ui_dispatch_mouse_events();
-                        dispatched = true;
-                    }
-
-                    if (!dispatched) ui_dispatch_mouse_events();
+                        ? update_calibration(snapshot)
+                        : update_measurement(snapshot);
                 }
                 if (SUCCEEDED(content_result)) content_result = common_render_.draw(context);
                 if (SUCCEEDED(content_result)) {
