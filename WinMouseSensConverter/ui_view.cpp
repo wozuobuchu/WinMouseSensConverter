@@ -124,6 +124,30 @@ namespace ui::view {
         calibration_grid_->set_items({
             {L"CALIBRATED DPI", L"\x2014 DPI", 2},
         });
+
+        // Status bar is a single panel, so its highlight is an on/off switch driven by
+        // ENTER/LEAVE. Each value grid has multiple cards: ENTER selects the card under
+        // the pointer, ON (emitted every 8 ms timer tick while hovered) re-selects it so
+        // the highlight follows the pointer across cards, and LEAVE clears it. A grid in
+        // the inactive mode is not in a registered renderer, so it never reports hover
+        // and stays neutral; set_renderers also emits LEAVE when a mode is switched.
+        using MouseEvent = d2dui::D2duiMouseEvent;
+        status_bar_->register_mouse_event_handler<MouseEvent::MOUSE_HOVER_ENTER>(
+            [this](const d2dui::D2duiMouseEventParam&) { status_bar_->set_highlighted(true); });
+        status_bar_->register_mouse_event_handler<MouseEvent::MOUSE_HOVER_LEAVE>(
+            [this](const d2dui::D2duiMouseEventParam&) { status_bar_->set_highlighted(false); });
+        measurement_grid_->register_mouse_event_handler<MouseEvent::MOUSE_HOVER_ENTER>(
+            [this](const d2dui::D2duiMouseEventParam& param) { measurement_grid_->set_hover(param.position); });
+        measurement_grid_->register_mouse_event_handler<MouseEvent::MOUSE_HOVER_ON>(
+            [this](const d2dui::D2duiMouseEventParam& param) { measurement_grid_->set_hover(param.position); });
+        measurement_grid_->register_mouse_event_handler<MouseEvent::MOUSE_HOVER_LEAVE>(
+            [this](const d2dui::D2duiMouseEventParam&) { measurement_grid_->clear_hover(); });
+        calibration_grid_->register_mouse_event_handler<MouseEvent::MOUSE_HOVER_ENTER>(
+            [this](const d2dui::D2duiMouseEventParam& param) { calibration_grid_->set_hover(param.position); });
+        calibration_grid_->register_mouse_event_handler<MouseEvent::MOUSE_HOVER_ON>(
+            [this](const d2dui::D2duiMouseEventParam& param) { calibration_grid_->set_hover(param.position); });
+        calibration_grid_->register_mouse_event_handler<MouseEvent::MOUSE_HOVER_LEAVE>(
+            [this](const d2dui::D2duiMouseEventParam&) { calibration_grid_->clear_hover(); });
     }
 
     HRESULT MainView::prepare_resources(d2dui::D2duiContext& context) noexcept {

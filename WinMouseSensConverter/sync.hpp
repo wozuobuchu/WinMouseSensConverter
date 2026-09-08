@@ -7,7 +7,9 @@
 
 #include <Windows.h>
 
+#include <algorithm>
 #include <cstdint>
+#include <string>
 
 #include "config.hpp"
 
@@ -35,6 +37,36 @@ namespace app_func {
         }
 
         return recording;
+    }
+
+    inline bool copy_text_to_clipboard(const std::wstring& text) noexcept {
+        if (!OpenClipboard(nullptr)) {
+            return false;
+        }
+
+        if (!EmptyClipboard()) {
+            CloseClipboard();
+            return false;
+        }
+
+        bool success = false;
+        if (HANDLE h_mem = GlobalAlloc(GMEM_MOVEABLE, (text.size() + 1) * sizeof(wchar_t)); h_mem != nullptr) {
+            if (void* ptr = GlobalLock(h_mem); ptr != nullptr) {
+                wchar_t* dst = static_cast<wchar_t*>(ptr);
+                std::copy(text.cbegin(), text.cend(), dst);
+                dst[text.size()] = L'\0';
+                GlobalUnlock(h_mem);
+                success = SetClipboardData(CF_UNICODETEXT, h_mem) != nullptr;
+                if (!success) {
+                    GlobalFree(h_mem);
+                }
+            } else {
+                GlobalFree(h_mem);
+            }
+        }
+
+        CloseClipboard();
+        return success;
     }
 }
 

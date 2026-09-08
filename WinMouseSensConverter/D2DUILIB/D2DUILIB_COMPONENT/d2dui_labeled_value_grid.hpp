@@ -76,6 +76,8 @@ namespace d2dui {
                     items_[index]->value.set_suffix(texts[index].suffix_start, 18.0f);
                 }
             }
+            // Re-apply the current hover highlight so newly created cards render correctly.
+            apply_highlight();
             dirty_ = true;
         }
 
@@ -93,7 +95,52 @@ namespace d2dui {
             item.value.set_suffix(suffix_start, 18.0f);
         }
 
+        // Callback entry point: highlight only the card under `position`. Cards re-draw
+        // each frame so just the panel colors switch; the layout stays untouched. When the
+        // pointer covers no card (or the pointer leaves) no card stays highlighted.
+        void set_hover(const D2D1_POINT_2F& position) noexcept {
+            apply_hover_index(hit_test_item(position));
+        }
+        // Callback entry point: clear any highlighted card when the pointer leaves.
+        void clear_hover() noexcept { apply_hover_index(kNoHover); }
+
     private:
+        // Locate the card whose half-open DIP bounds contain `position`, if any. The same
+        // half-open rule the input analyser uses keeps card borders from overlapping.
+        [[nodiscard]] size_t hit_test_item(const D2D1_POINT_2F& position) const noexcept {
+            for (size_t index = 0; index < items_.size(); ++index) {
+                const D2D1_RECT_F& card = items_[index]->panel.get_bounds();
+                if (position.x >= card.left && position.x < card.right
+                    && position.y >= card.top && position.y < card.bottom) {
+                    return index;
+                }
+            }
+            return kNoHover;
+        }
+
+        // Switch the hovered card, skipping redundant redraw repainting when unchanged.
+        void apply_hover_index(size_t index) noexcept {
+            if (hovered_ == index) return;
+            hovered_ = index;
+            apply_highlight();
+        }
+
+        // Recolor every card from its current geometry; only the hovered index differs.
+        void apply_highlight() noexcept {
+            for (size_t index = 0; index < items_.size(); ++index) {
+                const bool active = index == hovered_;
+                items_[index]->panel.set_fill_color(active ? hover_fill_ : normal_fill_);
+                items_[index]->panel.set_border(active ? hover_border_ : normal_border_);
+            }
+        }
+
+        static constexpr D2duiColor normal_fill_{0xFFFFFF, 1.0f};
+        static constexpr D2duiColor normal_border_{0xE1E7EF, 1.0f};
+        static constexpr D2duiColor hover_fill_{0xEFF6FF, 1.0f};
+        static constexpr D2duiColor hover_border_{0x3B82F6, 1.0f};
+        static constexpr size_t kNoHover = static_cast<size_t>(-1);
+
+        size_t hovered_ = kNoHover;
         struct Item {
             D2duiPanel panel;
             D2duiText label;

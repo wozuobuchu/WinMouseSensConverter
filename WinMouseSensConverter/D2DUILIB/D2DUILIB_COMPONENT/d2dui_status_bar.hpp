@@ -62,7 +62,17 @@ namespace d2dui {
         void set_label_text(std::wstring text) { label_text_.set_text(std::move(text)); }
         void set_checked(bool checked) noexcept { toggle_.set_checked(checked); }
 
+        // Toggle the hover highlight of the status bar. The frame re-draws the panel
+        // every pass, so only the panel colors change; no dirty flag is required.
+        void set_highlighted(bool highlighted) noexcept {
+            if (highlighted_ == highlighted) return;
+            highlighted_ = highlighted;
+            panel_.set_fill_color(highlighted ? D2duiColor{0xEFF6FF, 1.0f} : D2duiColor{0xFFFFFF, 1.0f});
+            panel_.set_border(highlighted ? D2duiColor{0x3B82F6, 1.0f} : D2duiColor{0xE1E7EF, 1.0f});
+        }
+
     private:
+        bool highlighted_ = false;
         static D2duiTextStyle center_style() {
             D2duiTextStyle style{};
             style.font_size = 14.0f;
