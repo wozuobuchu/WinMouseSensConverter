@@ -18,6 +18,7 @@ namespace d2dui {
             bool consumed = false;
             LRESULT result = 0;
             bool callbacks_invoked = false;
+            bool redraw_requested = false;
         };
 
         MouseEventAnalyser(HWND hwnd, UINT dpi) : hwnd_(hwnd), dpi_(dpi), active_(GetActiveWindow() == hwnd) {
@@ -32,6 +33,7 @@ namespace d2dui {
         // Retain surviving groups, including their hover/capture state. Validate
         // and allocate before changing ownership; callbacks may replace this list.
         bool set_renderers(std::vector<std::shared_ptr<D2duiSystemRender>> renderers) {
+            if (!depth_) redraw_requested_ = false;
             std::vector<std::shared_ptr<Group>> next;
             next.reserve(renderers.size());
             for (const auto& render : renderers) {
@@ -58,6 +60,7 @@ namespace d2dui {
         void set_dpi(UINT dpi) noexcept { if (dpi) dpi_ = dpi; }
 
         MessageResult process_window_message(UINT message, WPARAM wparam, LPARAM lparam) noexcept {
+            if (!depth_) redraw_requested_ = false;
             if (!hwnd_) return {};
             Input input{Kind::move};
             switch (message) {
@@ -71,24 +74,24 @@ namespace d2dui {
             case WM_MOUSEMOVE: break;
             case WM_MOUSELEAVE:
                 tracking_ = false;
-                return {true, 0, dispatch({Kind::leave})};
+                return {true, 0, dispatch({Kind::leave}), redraw_requested_};
             case WM_CAPTURECHANGED:
-                return {true, 0, reinterpret_cast<HWND>(lparam) != hwnd_ && physical_buttons_.any() ? cancel() : false};
-            case WM_CANCELMODE: return {false, 0, cancel()};
+                return {true, 0, reinterpret_cast<HWND>(lparam) != hwnd_ && physical_buttons_.any() ? cancel() : false, redraw_requested_};
+            case WM_CANCELMODE: return {false, 0, cancel(), redraw_requested_};
             case WM_ACTIVATE:
                 active_ = LOWORD(wparam) != WA_INACTIVE;
-                return {false, 0, !active_ ? cancel() : false};
+                return {false, 0, !active_ ? cancel() : false, redraw_requested_};
             case WM_ENTERMENULOOP:
                 in_menu_ = true;
-                return {false, 0, cancel()};
+                return {false, 0, cancel(), redraw_requested_};
             case WM_EXITMENULOOP: in_menu_ = false; return {};
             case WM_ENTERSIZEMOVE:
                 in_size_move_ = true;
-                return {false, 0, cancel()};
+                return {false, 0, cancel(), redraw_requested_};
             case WM_EXITSIZEMOVE: in_size_move_ = false; return {};
             case WM_SIZE:
                 minimized_ = wparam == SIZE_MINIMIZED;
-                return {false, 0, minimized_ ? cancel() : false};
+                return {false, 0, minimized_ ? cancel() : false, redraw_requested_};
             case WM_DPICHANGED:
                 set_dpi(HIWORD(wparam));
                 return {};
@@ -102,7 +105,7 @@ namespace d2dui {
                 active_ = false;
                 const bool invoked = cancel();
                 hwnd_ = nullptr;
-                return {false, 0, invoked};
+                return {false, 0, invoked, redraw_requested_};
             }
             default: return {};
             }
@@ -114,10 +117,15 @@ namespace d2dui {
             }
             const float factor = 96.0f / static_cast<float>(dpi_);
             input.position = {static_cast<float>(GET_X_LPARAM(lparam)) * factor, static_cast<float>(GET_Y_LPARAM(lparam)) * factor};
-            return {true, xbutton ? TRUE : 0, dispatch(input)};
+            return {true, xbutton ? TRUE : 0, dispatch(input), redraw_requested_};
         }
 
-        bool tick() noexcept { return enabled() ? dispatch({Kind::tick}) : false; }
+        bool tick() noexcept {
+            if (!depth_) redraw_requested_ = false;
+            return enabled() ? dispatch({Kind::tick}) : false;
+        }
+
+        [[nodiscard]] bool redraw_requested() const noexcept { return redraw_requested_; }
 
     private:
         enum class Kind { move, leave, down, up, tick };
@@ -156,7 +164,7 @@ namespace d2dui {
 
         bool enabled() const noexcept { return hwnd_ && active_ && !minimized_ && !in_menu_ && !in_size_move_; }
 
-        void enter() noexcept { if (depth_++ == 0) callbacks_invoked_ = false; }
+        void enter() noexcept { if (depth_++ == 0) { callbacks_invoked_ = false; redraw_requested_ = false; } }
 
         bool finish() noexcept {
             if (depth_ == 1) {
@@ -179,7 +187,7 @@ namespace d2dui {
 
         void emit(const std::shared_ptr<Entry>& entry, D2duiMouseEvent event, int16_t button, int16_t down) noexcept {
             if (entry->active)
-                callbacks_invoked_ = entry->component->respond_mouse_event(event, {position_, button, down, 0}) || callbacks_invoked_;
+                callbacks_invoked_ = entry->component->respond_mouse_event(event, {position_, button, down, 0}, &redraw_requested_) || callbacks_invoked_;
         }
 
         void cancel_group(Group& group) noexcept {
@@ -253,6 +261,12 @@ namespace d2dui {
         void process_safely(Input input) noexcept {
             try { process(input); }
             catch (...) { (void)cancel(); }
+            // Release lifetimes after each event, including early returns and failures.
+            // Keep both vector levels allocated for the next non-reentrant pass.
+            for (auto& pass : passes_) {
+                pass.entries.clear();
+                pass.group.reset();
+            }
         }
 
         void process(Input input) {
@@ -280,10 +294,14 @@ namespace d2dui {
 
             // Snapshot all queues before invoking callbacks: additions to any queue
             // participate only in the next event, removals remain immediately visible.
-            std::vector<Pass> passes;
-            passes.reserve(groups_.size());
-            for (const auto& group : groups_) passes.push_back({group, group->render->components_});
-            for (const auto& pass : passes) {
+            const size_t pass_count = groups_.size();
+            if (passes_.size() < pass_count) passes_.resize(pass_count);
+            for (size_t i = 0; i < pass_count; ++i) {
+                passes_[i].group = groups_[i];
+                passes_[i].entries.assign(groups_[i]->render->components_.begin(), groups_[i]->render->components_.end());
+            }
+            for (size_t pass_index = 0; pass_index < pass_count; ++pass_index) {
+                const auto& pass = passes_[pass_index];
                 for (const auto& entry : pass.entries) {
                     if (epoch != epoch_) return;
                     if (!entry->active) continue;
@@ -322,11 +340,13 @@ namespace d2dui {
         bool tracking_ = false;
         bool inside_ = false;
         bool callbacks_invoked_ = false;
+        bool redraw_requested_ = false;
         size_t depth_ = 0;
         size_t epoch_ = 0;
         D2D1_POINT_2F position_{};
         std::bitset<5> physical_buttons_;
         std::vector<std::shared_ptr<Group>> groups_;
+        std::vector<Pass> passes_;
         std::deque<Input> pending_;
     };
 

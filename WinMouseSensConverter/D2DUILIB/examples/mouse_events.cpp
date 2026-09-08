@@ -87,7 +87,7 @@ namespace mouse_events_example {
             // Forward lifecycle messages too, even when this host also handles them.
             if (message >= WM_MOUSEFIRST && message <= WM_MOUSELAST) state->layout();
             const auto input = state->mouse->process_window_message(message, wparam, lparam);
-            if (input.callbacks_invoked) state->dirty = true;
+            if (input.redraw_requested) state->dirty = true;
             if (input.consumed) return input.result;
 
             switch (message) {
@@ -95,7 +95,8 @@ namespace mouse_events_example {
             case WM_TIMER:
                 if (wparam != timer_id) break;
                 state->layout();
-                if (state->mouse->tick()) state->dirty = true;
+                (void)state->mouse->tick();
+                if (state->mouse->redraw_requested()) state->dirty = true;
                 state->frame_due = true;
                 return 0;
             case WM_SIZE:

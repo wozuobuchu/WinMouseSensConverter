@@ -108,7 +108,7 @@ namespace ui::view {
         std::wstring combined;
         const size_t count = grid.item_count();
         for (size_t index = 0; index < count; ++index) {
-            if (index != 0) combined.push_back(L'  ');
+            if (index != 0) combined += L"  ";
             combined += grid.value_component(index).text();
         }
         return combined;
@@ -145,21 +145,29 @@ namespace ui::view {
         // and stays neutral; set_renderers also emits LEAVE when a mode is switched.
         using MouseEvent = d2dui::D2duiMouseEvent;
         status_bar_->register_mouse_event_handler<MouseEvent::MOUSE_HOVER_ENTER>(
-            [this](const d2dui::D2duiMouseEventParam&) { status_bar_->set_highlighted(true); });
+            [this](const d2dui::D2duiMouseEventParam&) { return status_bar_->set_highlighted(true);}
+        );
         status_bar_->register_mouse_event_handler<MouseEvent::MOUSE_HOVER_LEAVE>(
-            [this](const d2dui::D2duiMouseEventParam&) { status_bar_->set_highlighted(false); });
+            [this](const d2dui::D2duiMouseEventParam&) { return status_bar_->set_highlighted(false); }
+        );
         measurement_grid_->register_mouse_event_handler<MouseEvent::MOUSE_HOVER_ENTER>(
-            [this](const d2dui::D2duiMouseEventParam& param) { measurement_grid_->set_hover(param.position); });
+            [this](const d2dui::D2duiMouseEventParam& param) { return measurement_grid_->set_hover(param.position); }
+        );
         measurement_grid_->register_mouse_event_handler<MouseEvent::MOUSE_HOVER_ON>(
-            [this](const d2dui::D2duiMouseEventParam& param) { measurement_grid_->set_hover(param.position); });
+            [this](const d2dui::D2duiMouseEventParam& param) { return measurement_grid_->set_hover(param.position); }
+        );
         measurement_grid_->register_mouse_event_handler<MouseEvent::MOUSE_HOVER_LEAVE>(
-            [this](const d2dui::D2duiMouseEventParam&) { measurement_grid_->clear_hover(); });
+            [this](const d2dui::D2duiMouseEventParam&) { return measurement_grid_->clear_hover(); }
+        );
         calibration_grid_->register_mouse_event_handler<MouseEvent::MOUSE_HOVER_ENTER>(
-            [this](const d2dui::D2duiMouseEventParam& param) { calibration_grid_->set_hover(param.position); });
+            [this](const d2dui::D2duiMouseEventParam& param) { return calibration_grid_->set_hover(param.position); }
+        );
         calibration_grid_->register_mouse_event_handler<MouseEvent::MOUSE_HOVER_ON>(
-            [this](const d2dui::D2duiMouseEventParam& param) { calibration_grid_->set_hover(param.position); });
+            [this](const d2dui::D2duiMouseEventParam& param) { return calibration_grid_->set_hover(param.position); }
+        );
         calibration_grid_->register_mouse_event_handler<MouseEvent::MOUSE_HOVER_LEAVE>(
-            [this](const d2dui::D2duiMouseEventParam&) { calibration_grid_->clear_hover(); });
+            [this](const d2dui::D2duiMouseEventParam&) { return calibration_grid_->clear_hover(); }
+        );
 
         // A single left click on the status bar toggles the recording switch and the
         // global recording state. A single left click on a value grid copies the card
@@ -167,14 +175,17 @@ namespace ui::view {
         status_bar_->register_mouse_event_handler<MouseEvent::MOUSE_LEFT_CLICK_LEAVE>(
             [this](const d2dui::D2duiMouseEventParam&) {
                 status_bar_->set_checked(app_func::toggle_recording());
+                return true;
             });
         measurement_grid_->register_mouse_event_handler<MouseEvent::MOUSE_LEFT_CLICK_LEAVE>(
             [this](const d2dui::D2duiMouseEventParam&) {
                 (void)app_func::copy_text_to_clipboard(combine_grid_values(*measurement_grid_));
+                return false;
             });
         calibration_grid_->register_mouse_event_handler<MouseEvent::MOUSE_LEFT_CLICK_LEAVE>(
             [this](const d2dui::D2duiMouseEventParam&) {
                 (void)app_func::copy_text_to_clipboard(combine_grid_values(*calibration_grid_));
+                return false;
             });
     }
 
@@ -202,9 +213,13 @@ namespace ui::view {
     }
 
     HRESULT MainView::update_common(const ViewSnapshot& snapshot) {
+        if (common_valid_ && displayed_recording_ == snapshot.recording && displayed_key_ == snapshot.recording_key_name) return S_FALSE;
         auto& status = *status_bar_;
         status.set_badge_text(snapshot.recording_key_name);
         status.set_checked(snapshot.recording);
+        displayed_key_ = snapshot.recording_key_name;
+        displayed_recording_ = snapshot.recording;
+        common_valid_ = true;
         return S_OK;
     }
 
@@ -213,26 +228,40 @@ namespace ui::view {
         wchar_t unit[64]{};
         wchar_t x_value[128]{};
         wchar_t y_value[128]{};
-        if (format_reference_dpi_cell(snapshot.reference_dpi, reference_dpi, std::size(reference_dpi)) <= 0) return E_FAIL;
-        if (format_unit_cell(snapshot.unit, unit, std::size(unit)) <= 0) return E_FAIL;
+        const bool header_changed = !measurement_cache_.valid || measurement_cache_.reference_dpi != snapshot.reference_dpi || measurement_cache_.unit != snapshot.unit;
+        if (!header_changed && measurement_cache_.dx == snapshot.accumulated_dx && measurement_cache_.dy == snapshot.accumulated_dy) return S_FALSE;
+        if (header_changed) {
+            if (format_reference_dpi_cell(snapshot.reference_dpi, reference_dpi, std::size(reference_dpi)) <= 0) return E_FAIL;
+            if (format_unit_cell(snapshot.unit, unit, std::size(unit)) <= 0) return E_FAIL;
+        }
         if (format_distance_value(snapshot.accumulated_dx, snapshot.reference_dpi, snapshot.unit, x_value, std::size(x_value)) <= 0) return E_FAIL;
         if (format_distance_value(snapshot.accumulated_dy, snapshot.reference_dpi, snapshot.unit, y_value, std::size(y_value)) <= 0) return E_FAIL;
 
         auto& header = *measurement_header_;
-        header.set_cell_text(0, reference_dpi);
-        header.set_cell_text(1, unit);
+        if (header_changed) {
+            header.set_cell_text(0, reference_dpi);
+            header.set_cell_text(1, unit);
+        }
         auto& grid = *measurement_grid_;
+        const bool changed = header_changed || grid.value_component(0).text() != x_value || grid.value_component(1).text() != y_value;
         grid.set_value(0, x_value);
         grid.set_value(1, y_value);
-        return S_OK;
+        measurement_cache_ = {true, snapshot.reference_dpi, 0.0, snapshot.unit, snapshot.accumulated_dx, snapshot.accumulated_dy};
+        return changed ? S_OK : S_FALSE;
     }
 
     HRESULT MainView::update_calibration(const ViewSnapshot& snapshot) {
         wchar_t calibration_distance[192]{};
         wchar_t unit[64]{};
         wchar_t value[128]{};
-        if (format_calibration_distance_cell(snapshot.calibration_distance_cm, snapshot.reference_dpi, snapshot.unit, calibration_distance, std::size(calibration_distance)) <= 0) return E_FAIL;
-        if (format_unit_cell(snapshot.unit, unit, std::size(unit)) <= 0) return E_FAIL;
+        const bool header_changed = !calibration_cache_.valid || calibration_cache_.unit != snapshot.unit
+            || calibration_cache_.calibration_distance_cm != snapshot.calibration_distance_cm
+            || (snapshot.unit == Unit::raw && calibration_cache_.reference_dpi != snapshot.reference_dpi);
+        if (!header_changed && calibration_cache_.dx == snapshot.accumulated_dx && calibration_cache_.dy == snapshot.accumulated_dy) return S_FALSE;
+        if (header_changed) {
+            if (format_calibration_distance_cell(snapshot.calibration_distance_cm, snapshot.reference_dpi, snapshot.unit, calibration_distance, std::size(calibration_distance)) <= 0) return E_FAIL;
+            if (format_unit_cell(snapshot.unit, unit, std::size(unit)) <= 0) return E_FAIL;
+        }
         const double counts = std::hypot(snapshot.accumulated_dx, snapshot.accumulated_dy);
         const double dpi = calibration_dpi_from_counts(counts, snapshot.calibration_distance_cm);
         int written = 0;
@@ -244,15 +273,23 @@ namespace ui::view {
         if (separator == nullptr) return E_FAIL;
 
         auto& header = *calibration_header_;
-        header.set_cell_text(0, calibration_distance);
-        header.set_cell_text(1, unit);
+        if (header_changed) {
+            header.set_cell_text(0, calibration_distance);
+            header.set_cell_text(1, unit);
+        }
         auto& grid = *calibration_grid_;
+        const bool changed = header_changed || grid.value_component(0).text() != value;
         grid.set_value(0, value, static_cast<UINT32>(separator - value) + 1);
-        return S_OK;
+        calibration_cache_ = {true, snapshot.reference_dpi, snapshot.calibration_distance_cm, snapshot.unit, snapshot.accumulated_dx, snapshot.accumulated_dy};
+        return changed ? S_OK : S_FALSE;
     }
 
     void MainView::update_layout(float width, float height) noexcept {
-        const auto layout = calculate_page_layout(width, height);
+        if (layout_width_ == width && layout_height_ == height) return;
+        layout_width_ = width;
+        layout_height_ = height;
+        layout_ = calculate_page_layout(width, height);
+        const auto& layout = layout_;
         status_bar_->resize(layout.footer_bounds, layout.scale);
         measurement_header_->resize(layout.header_bounds, layout.scale);
         calibration_header_->resize(layout.header_bounds, layout.scale);
@@ -260,24 +297,38 @@ namespace ui::view {
         calibration_grid_->resize(layout.data_bounds, layout.scale);
     }
 
+    HRESULT MainView::update_content(const ViewSnapshot& snapshot) noexcept {
+        try {
+            const HRESULT common = update_common(snapshot);
+            if (FAILED(common)) return common;
+            const HRESULT values = snapshot.mode == config::AppMode::calibration
+                ? update_calibration(snapshot) : update_measurement(snapshot);
+            if (FAILED(values)) return values;
+            const bool changed = common == S_OK || values == S_OK || !mode_valid_ || displayed_mode_ != snapshot.mode;
+            displayed_mode_ = snapshot.mode;
+            mode_valid_ = true;
+            return changed ? S_OK : S_FALSE;
+        } catch (const std::bad_alloc&) {
+            return E_OUTOFMEMORY;
+        } catch (...) {
+            return E_FAIL;
+        }
+    }
+
     HRESULT MainView::render(d2dui::D2duiContext& context, const ViewSnapshot& snapshot) noexcept {
+        const HRESULT update_result = update_content(snapshot);
+        if (FAILED(update_result)) return update_result;
         const HRESULT begin_result = context.begin_frame({0xF4F7FB, 1.0f});
         if (begin_result != S_OK) return begin_result;
 
         HRESULT content_result = S_OK;
         try {
             const D2D1_SIZE_F size = context.size();
-            const PageLayout layout = calculate_page_layout(size.width, size.height);
+            update_layout(size.width, size.height);
+            const auto& layout = layout_;
             if (layout.content_width <= 1.0f || layout.data_bounds.bottom <= layout.data_bounds.top) {
                 content_result = E_FAIL;
             } else {
-                update_layout(size.width, size.height);
-                content_result = update_common(snapshot);
-                if (SUCCEEDED(content_result)) {
-                    content_result = snapshot.mode == config::AppMode::calibration
-                        ? update_calibration(snapshot)
-                        : update_measurement(snapshot);
-                }
                 if (SUCCEEDED(content_result)) content_result = common_render_->draw(context);
                 if (SUCCEEDED(content_result)) {
                     content_result = snapshot.mode == config::AppMode::calibration

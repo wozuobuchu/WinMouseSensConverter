@@ -44,6 +44,53 @@ namespace automatic_test {
     } // namespace
 
     void add_layout_cache_tests(TestRunner& runner) {
+        runner.run("display preparation caches rounded values and mode headers without drawing", [&] {
+            ui::view::MainView view;
+            ui::view::ViewSnapshot snapshot{};
+            snapshot.reference_dpi = 10000;
+            snapshot.unit = config::OutputUnit::m;
+            TEST_EXPECT(runner, view.update_content(snapshot) == S_OK);
+            TEST_EXPECT(runner, view.update_content(snapshot) == S_FALSE);
+            snapshot.accumulated_dx = 1;
+            TEST_EXPECT(runner, view.update_content(snapshot) == S_FALSE);
+            snapshot.accumulated_dx = 1000;
+            TEST_EXPECT(runner, view.update_content(snapshot) == S_OK);
+            snapshot.recording = true;
+            TEST_EXPECT(runner, view.update_content(snapshot) == S_OK);
+            snapshot.mode = config::AppMode::calibration;
+            snapshot.accumulated_dx = 100;
+            TEST_EXPECT(runner, view.update_content(snapshot) == S_OK);
+            snapshot.accumulated_dx += 0.00001;
+            TEST_EXPECT(runner, view.update_content(snapshot) == S_FALSE);
+            snapshot.calibration_distance_cm = 20;
+            TEST_EXPECT(runner, view.update_content(snapshot) == S_OK);
+            snapshot.unit = config::OutputUnit::raw;
+            TEST_EXPECT(runner, view.update_content(snapshot) == S_OK);
+            snapshot.reference_dpi = 800;
+            TEST_EXPECT(runner, view.update_content(snapshot) == S_OK);
+            TEST_EXPECT(runner, view.update_content(snapshot) == S_FALSE);
+            snapshot.mode = config::AppMode::measurement;
+            TEST_EXPECT(runner, view.update_content(snapshot) == S_OK);
+            TEST_EXPECT(runner, view.update_content(snapshot) == S_FALSE);
+        });
+
+        runner.run("boolean callbacks separate invocation from redraw with legacy compatibility", [&] {
+            d2dui::D2duiSwitch component;
+            constexpr auto event = d2dui::D2duiMouseEvent::MOUSE_HOVER_ON;
+            int calls = 0;
+            component.register_mouse_event_handler<event>([&](const auto&) { ++calls; return false; });
+            bool redraw = false;
+            TEST_EXPECT(runner, component.respond_mouse_event(event, {}, &redraw));
+            TEST_EXPECT(runner, calls == 1 && !redraw);
+            component.register_mouse_event_handler<event>([&](const auto&) { ++calls; return true; });
+            TEST_EXPECT(runner, component.respond_mouse_event(event, {}, &redraw));
+            TEST_EXPECT(runner, calls == 2 && redraw);
+            redraw = false;
+            component.register_mouse_event_handler<event>([&](const auto&) { ++calls; });
+            TEST_EXPECT(runner, component.respond_mouse_event(event, {}, &redraw));
+            TEST_EXPECT(runner, calls == 3 && redraw);
+        });
+
         runner.run("mouse callbacks survive self removal and replacement", [&] {
             constexpr auto event = d2dui::D2duiMouseEvent::MOUSE_LEFT_CLICK_ENTER;
             for (const bool replace : {false, true}) {

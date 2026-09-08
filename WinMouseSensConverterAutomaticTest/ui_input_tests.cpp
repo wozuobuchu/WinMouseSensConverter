@@ -32,6 +32,62 @@ public:
 }
 void add_ui_input_tests(TestRunner& runner) {
     using Event = d2dui::D2duiMouseEvent;
+    runner.run("stationary hover skips frames but card changes and exposure repaint", [&] {
+        InputWindow fixture;
+        auto& state = fixture.state;
+        TEST_EXPECT(runner, SUCCEEDED(state.d2dui_context.initialize(state.hwnd)));
+        class DrawCounter final : public d2dui::D2duiComponentsBase {
+        public:
+            int frames = 0;
+            bool fail = false;
+            const D2D1_RECT_F& get_bounds() const noexcept override { return bounds_; }
+            void resize(const D2D1_RECT_F&, float) noexcept override {}
+            HRESULT draw(d2dui::D2duiContext&) noexcept override { ++frames; return fail ? E_FAIL : S_OK; }
+        };
+        auto counter = std::make_shared<DrawCounter>();
+        state.main_view.common_render()->register_component(counter);
+        MSG timer{};
+        timer.hwnd = state.hwnd;
+        timer.message = WM_TIMER;
+        timer.wParam = kUiTimer;
+        auto tick = [&] {
+            process_ui_timer(state);
+            ui::finish_main_loop_iteration(state.hwnd, timer);
+        };
+        state.redraw_dirty = true;
+        tick();
+        TEST_EXPECT(runner, counter->frames == 1);
+        auto move_to_card = [&](size_t index) {
+            const auto bounds = state.main_view.measurement_grid().item_bounds(index);
+            main_window_proc(state.hwnd, WM_MOUSEMOVE, 0,
+                MAKELPARAM(static_cast<short>((bounds.left + bounds.right) / 2), static_cast<short>((bounds.top + bounds.bottom) / 2)));
+        };
+        move_to_card(0);
+        tick();
+        TEST_EXPECT(runner, counter->frames == 2);
+        for (int i = 0; i < 100; ++i) tick();
+        TEST_EXPECT(runner, counter->frames == 2 && !state.redraw_dirty);
+        move_to_card(1);
+        tick();
+        TEST_EXPECT(runner, counter->frames == 3);
+        for (int i = 0; i < 100; ++i) tick();
+        TEST_EXPECT(runner, counter->frames == 3);
+        main_window_proc(state.hwnd, WM_PAINT, 0, 0);
+        tick();
+        TEST_EXPECT(runner, counter->frames == 4);
+        state.d2dui_context.discard_device_resources();
+        state.redraw_dirty = true;
+        tick();
+        TEST_EXPECT(runner, counter->frames == 5 && !state.redraw_dirty);
+        counter->fail = true;
+        state.redraw_dirty = true;
+        tick();
+        TEST_EXPECT(runner, counter->frames == 6 && state.redraw_dirty);
+        counter->fail = false;
+        tick();
+        TEST_EXPECT(runner, counter->frames == 7 && !state.redraw_dirty);
+    });
+
     runner.run("window adapter schedules stopped input without a render target", [&] {
         InputWindow fixture;
         auto& state = fixture.state;

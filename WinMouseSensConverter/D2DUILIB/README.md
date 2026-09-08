@@ -41,12 +41,13 @@ Include `D2DUILIB_INTERFACE/d2dui_mouse_event_analyser.hpp` and create one `d2du
 | --- | --- |
 | `MouseEventAnalyser(HWND, UINT dpi)` | Bind a live HWND and positive DPI. Null HWND or zero DPI throws `std::invalid_argument`. The analyser cannot be copied or moved. |
 | `bool set_renderers(std::vector<std::shared_ptr<D2duiSystemRender>>)` | Set queues in dispatch order. An empty list is valid; null or duplicate renderers throw `std::invalid_argument` without changing the current list. Allocations may throw before the list changes. An unchanged list is a no-op. |
-| `MessageResult process_window_message(UINT, WPARAM, LPARAM) noexcept` | Forward window messages, including lifecycle messages. The result contains `consumed`, `result`, and `callbacks_invoked`. Return `result` from the window procedure only when `consumed` is true; otherwise continue normal host/default handling. |
+| `MessageResult process_window_message(UINT, WPARAM, LPARAM) noexcept` | Forward window messages, including lifecycle messages. The result contains `consumed`, `result`, `callbacks_invoked`, and `redraw_requested`. Return `result` from the window procedure only when `consumed` is true; otherwise continue normal host/default handling. |
 | `void set_dpi(UINT dpi) noexcept` | Update conversion for subsequent mouse messages when the host synchronizes DPI explicitly. Zero is ignored. Does not invoke callbacks, cancel capture, or reinterpret already sampled DIP positions. |
 | `bool tick() noexcept` | Emit continuous hover/hold callbacks from the host timer. Does nothing while inactive, minimized, in a menu or sizing loop, or after window destruction. |
+| `bool redraw_requested() const noexcept` | Read the redraw request from the latest operation without changing it. |
 | Destructor | Release mouse capture, tracking, and shared ownership without invoking component callbacks. |
 
-The boolean results report whether a component callback completed successfully, including callbacks from drained nested messages. The host uses that result to mark its UI dirty. The analyser never renders, invalidates a window, creates a timer, or reads a live cursor position. Component bounds must be current DIPs before forwarding input and before calling `tick()`; no Direct2D render target is needed for input.
+`tick()`, `set_renderers()`, and `MessageResult::callbacks_invoked` report whether a component callback completed successfully, including callbacks from drained nested messages. Callback execution and redraw requests are independent: a handler returning `bool` requests a redraw only when it returns `true`; existing `void` handlers conservatively request a redraw after successful execution. For window messages, use `MessageResult::redraw_requested` to mark the UI dirty. After `tick()` or `set_renderers()`, read `redraw_requested()` immediately; it includes requests from drained nested callbacks. The next top-level message, tick, or renderer-list update resets this flag. `respond_mouse_event` still returns callback completion and optionally ORs redraw requests into its third `bool*` argument. The analyser never renders, invalidates a window, creates a timer, or reads a live cursor position. Component bounds must be current DIPs before forwarding input and before calling `tick()`; no Direct2D render target is needed for input.
 
 ### Connecting a window
 
@@ -66,12 +67,13 @@ mouse->set_renderers({common, page});
 
 // At the start of the window procedure, after updating input layout:
 const auto input = mouse->process_window_message(message, wparam, lparam);
-if (input.callbacks_invoked) redraw_dirty = true;
+if (input.redraw_requested) redraw_dirty = true;
 if (input.consumed) return input.result;
 // Continue host/default processing for messages not consumed.
 
 // In the host's chosen timer handler, after updating layout:
-if (mouse->tick()) redraw_dirty = true;
+(void)mouse->tick();
+if (mouse->redraw_requested()) redraw_dirty = true;
 // Draw only in the host's central, timer-gated main-loop path.
 
 // When changing pages, also select this same page for subsequent drawing:

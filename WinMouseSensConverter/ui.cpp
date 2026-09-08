@@ -341,28 +341,32 @@ namespace {
         }
     }
 
+    ui::view::ViewSnapshot view_snapshot(const UiState& state) noexcept {
+        return {
+            app_data::current_mode_, app_data::on_recording_ != 0,
+            app_data::accumulated_muzmov_dx, app_data::accumulated_muzmov_dy,
+            state.user_config->reference_dpi, state.user_config->unit,
+            state.user_config->calibration_distance_cm,
+            std::wstring_view(state.recording_key_name.data(), state.recording_key_name_length),
+        };
+    }
+
     // Called by WM_TIMER independently of the redraw gate. Never paints.
     void process_ui_timer(UiState& state) noexcept {
-        if (pull_pending_input(state)) state.redraw_dirty = true;
+        if (pull_pending_input(state)) {
+            // Failures remain dirty and are retried at the rendering boundary.
+            if (state.minimized || state.in_size_move
+                || state.main_view.update_content(view_snapshot(state)) != S_FALSE) state.redraw_dirty = true;
+        }
         if (state.mouse_analyser) {
-            update_input_layout(state);
-            if (state.mouse_analyser->tick()) state.redraw_dirty = true;
+            (void)state.mouse_analyser->tick();
+            if (state.mouse_analyser->redraw_requested()) state.redraw_dirty = true;
         }
     }
 
     bool paint_window(UiState& state) noexcept {
         if (state.user_config == nullptr) return false;
-        const ui::view::ViewSnapshot snapshot{
-            app_data::current_mode_,
-            app_data::on_recording_ != 0,
-            app_data::accumulated_muzmov_dx,
-            app_data::accumulated_muzmov_dy,
-            state.user_config->reference_dpi,
-            state.user_config->unit,
-            state.user_config->calibration_distance_cm,
-            std::wstring_view(state.recording_key_name.data(), state.recording_key_name_length),
-        };
-        return state.main_view.render(state.d2dui_context, snapshot) == S_OK;
+        return state.main_view.render(state.d2dui_context, view_snapshot(state)) == S_OK;
     }
 
     void update_menu_selection(UiState& state) noexcept {
@@ -851,10 +855,8 @@ namespace {
         }
 
         if (state != nullptr && state->mouse_analyser) {
-            // Layout belongs to the application; input analysis never opens a frame.
-            if (message >= WM_MOUSEFIRST && message <= WM_MOUSELAST) update_input_layout(*state);
             const auto input_result = state->mouse_analyser->process_window_message(message, wparam, lparam);
-            if (input_result.callbacks_invoked) state->redraw_dirty = true;
+            if (input_result.redraw_requested) state->redraw_dirty = true;
             if (input_result.consumed) return input_result.result;
         }
 
@@ -1041,6 +1043,7 @@ namespace ui {
             }
 
             update_menu_selection(*state);
+            update_input_layout(*state);
 
             // SetMenu transfers menu lifetime to the window. Keep only non-owning access through GetMenu.
             state->root_menu = nullptr;

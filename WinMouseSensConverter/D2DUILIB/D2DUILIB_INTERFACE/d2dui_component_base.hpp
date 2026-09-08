@@ -13,6 +13,7 @@
 #include <memory>
 #include <unordered_map>
 #include <utility>
+#include <type_traits>
 
 
 namespace d2dui {
@@ -83,8 +84,7 @@ namespace d2dui {
         template <D2duiMouseEvent Event, typename Handler>
             requires ValidD2duiMouseEvent<Event> && std::invocable<Handler&, const D2duiMouseEventParam&>
         void register_mouse_event_handler(Handler&& handler) noexcept {
-            mouse_event_handlers_[static_cast<int32_t>(Event)] =
-                std::make_shared<std::function<void(const D2duiMouseEventParam&)>>(std::forward<Handler>(handler));
+            mouse_event_handlers_.emplace(static_cast<int32_t>(Event), std::forward<Handler>(handler));
         }
 
         // Unregister a mouse event handler for the component.
@@ -95,7 +95,7 @@ namespace d2dui {
         }
 
         // Invoke the registered mouse event handler for the component.
-        bool respond_mouse_event(const D2duiMouseEvent event, const D2duiMouseEventParam param) noexcept {
+        bool respond_mouse_event(const D2duiMouseEvent event, const D2duiMouseEventParam param, bool* redraw_requested = nullptr) noexcept {
             const auto handler = mouse_event_handlers_.find(static_cast<int32_t>(event));
             if (handler == mouse_event_handlers_.end()) {
                 return false;
@@ -103,8 +103,8 @@ namespace d2dui {
 
             try {
                 // Keep the same callable alive if it unregisters or replaces itself.
-                const auto active_handler = handler->second;
-                (*active_handler)(param);
+                const bool changed = handler->second(param);
+                if (redraw_requested != nullptr) *redraw_requested |= changed;
             } catch (...) {
                 return false;
             }
@@ -118,7 +118,7 @@ namespace d2dui {
         bool dirty_ = true;
 
     private:
-        std::unordered_map<int32_t, std::shared_ptr<std::function<void(const D2duiMouseEventParam&)>>> mouse_event_handlers_;
+        std::unordered_map<int32_t, std::function<bool(const D2duiMouseEventParam&)>> mouse_event_handlers_;
 
     };
 

@@ -18,6 +18,30 @@ template<Event E> void count(Probe& p, int& value) {
 }
 }
 void add_mouse_dispatch_tests(TestRunner& runner) {
+    runner.run("reused dispatch snapshots release removed components after callbacks", [&] {
+        MouseTestWindow window;
+        auto probe = std::make_shared<Probe>();
+        std::weak_ptr<Probe> weak = probe;
+        window.render->register_component(probe);
+        int calls = 0;
+        probe->register_mouse_event_handler<Event::MOUSE_HOVER_ON>([&](const auto&) {
+            ++calls;
+            if (calls == 100) {
+                window.render->clear();
+                TEST_EXPECT(runner, !weak.expired());
+            }
+            return false;
+        });
+        probe.reset();
+        window.message(WM_MOUSEMOVE, 0, MAKELPARAM(20, 20));
+        for (int i = 0; i < 100; ++i) {
+            TEST_EXPECT(runner, window.analyser->tick());
+            TEST_EXPECT(runner, !window.analyser->redraw_requested());
+        }
+        TEST_EXPECT(runner, calls == 100 && weak.expired());
+        TEST_EXPECT(runner, !window.analyser->tick());
+    });
+
     runner.run("mouse transitions use event position and ticks alone repeat", [&] {
         MouseTestWindow window;
         auto render = window.render;

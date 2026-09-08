@@ -12,6 +12,7 @@
 
 #include <cstddef>
 #include <memory>
+#include <string>
 #include <string_view>
 
 namespace ui::view {
@@ -53,6 +54,8 @@ namespace ui::view {
         MainView& operator=(const MainView&) = delete;
 
         HRESULT prepare_resources(d2dui::D2duiContext& context) noexcept;
+        // S_OK means displayed content changed; S_FALSE means unchanged. Never draws.
+        HRESULT update_content(const ViewSnapshot& snapshot) noexcept;
         HRESULT render(d2dui::D2duiContext& context, const ViewSnapshot& snapshot) noexcept;
 
         [[nodiscard]] std::shared_ptr<d2dui::D2duiSystemRender> common_render() noexcept { return common_render_; }
@@ -68,6 +71,26 @@ namespace ui::view {
         HRESULT update_common(const ViewSnapshot& snapshot);
         HRESULT update_measurement(const ViewSnapshot& snapshot);
         HRESULT update_calibration(const ViewSnapshot& snapshot);
+
+        // Inputs of the last successful formatting pass, not runtime measurement state.
+        struct ContentCache {
+            bool valid = false;
+            double reference_dpi = 0.0;
+            double calibration_distance_cm = 0.0;
+            Unit unit = Unit::raw;
+            double dx = 0.0;
+            double dy = 0.0;
+        };
+        ContentCache measurement_cache_;
+        ContentCache calibration_cache_;
+        bool common_valid_ = false;
+        bool displayed_recording_ = false;
+        std::wstring displayed_key_;
+        config::AppMode displayed_mode_ = config::AppMode::measurement;
+        bool mode_valid_ = false;
+        float layout_width_ = -1.0f;
+        float layout_height_ = -1.0f;
+        PageLayout layout_{};
 
         std::shared_ptr<d2dui::D2duiSystemRender> common_render_ = std::make_shared<d2dui::D2duiSystemRender>();
         std::shared_ptr<d2dui::D2duiSystemRender> measurement_render_ = std::make_shared<d2dui::D2duiSystemRender>();

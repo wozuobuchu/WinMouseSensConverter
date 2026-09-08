@@ -64,11 +64,12 @@ namespace d2dui {
 
         // Toggle the hover highlight of the status bar. The frame re-draws the panel
         // every pass, so only the panel colors change; no dirty flag is required.
-        void set_highlighted(bool highlighted) noexcept {
-            if (highlighted_ == highlighted) return;
+        bool set_highlighted(bool highlighted) noexcept {
+            if (highlighted_ == highlighted) return false;
             highlighted_ = highlighted;
             panel_.set_fill_color(highlighted ? D2duiColor{0xEFF6FF, 1.0f} : D2duiColor{0xFFFFFF, 1.0f});
             panel_.set_border(highlighted ? D2duiColor{0x3B82F6, 1.0f} : D2duiColor{0xE1E7EF, 1.0f});
+            return true;
         }
 
     private:

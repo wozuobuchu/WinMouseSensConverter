@@ -98,11 +98,11 @@ namespace d2dui {
         // Callback entry point: highlight only the card under `position`. Cards re-draw
         // each frame so just the panel colors switch; the layout stays untouched. When the
         // pointer covers no card (or the pointer leaves) no card stays highlighted.
-        void set_hover(const D2D1_POINT_2F& position) noexcept {
-            apply_hover_index(hit_test_item(position));
+        bool set_hover(const D2D1_POINT_2F& position) noexcept {
+            return apply_hover_index(hit_test_item(position));
         }
         // Callback entry point: clear any highlighted card when the pointer leaves.
-        void clear_hover() noexcept { apply_hover_index(kNoHover); }
+        bool clear_hover() noexcept { return apply_hover_index(kNoHover); }
 
     private:
         // Locate the card whose half-open DIP bounds contain `position`, if any. The same
@@ -119,10 +119,11 @@ namespace d2dui {
         }
 
         // Switch the hovered card, skipping redundant redraw repainting when unchanged.
-        void apply_hover_index(size_t index) noexcept {
-            if (hovered_ == index) return;
+        bool apply_hover_index(size_t index) noexcept {
+            if (hovered_ == index) return false;
             hovered_ = index;
             apply_highlight();
+            return true;
         }
 
         // Recolor every card from its current geometry; only the hovered index differs.
