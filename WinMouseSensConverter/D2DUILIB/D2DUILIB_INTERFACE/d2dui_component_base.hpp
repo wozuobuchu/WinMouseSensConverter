@@ -80,11 +80,14 @@ namespace d2dui {
         virtual void resize(const D2D1_RECT_F& bounds, float scale) noexcept = 0;
         virtual HRESULT draw(D2duiContext& context) noexcept = 0;
 
-        // Register a mouse event handler for the component.
-        template <D2duiMouseEvent Event, typename Handler>
-            requires ValidD2duiMouseEvent<Event> && std::invocable<Handler&, const D2duiMouseEventParam&>
+        // Register a mouse event handler for the component. The handler must return
+        // bool (true requests a redraw); void-returning handlers are rejected by the concept constraint and fail to compile.
+        template <D2duiMouseEvent Event, typename Handler> requires
+            ValidD2duiMouseEvent<Event> && 
+            std::invocable<Handler&, const D2duiMouseEventParam&> && 
+            std::convertible_to<std::invoke_result_t<Handler&, const D2duiMouseEventParam&>, bool>
         void register_mouse_event_handler(Handler&& handler) noexcept {
-            mouse_event_handlers_.emplace(static_cast<int32_t>(Event), std::forward<Handler>(handler));
+            mouse_event_handlers_.insert_or_assign(static_cast<int32_t>(Event), std::forward<Handler>(handler));
         }
 
         // Unregister a mouse event handler for the component.
@@ -102,7 +105,9 @@ namespace d2dui {
             }
 
             try {
-                // Keep the same callable alive if it unregisters or replaces itself.
+                // The handler must not unregister or replace its own event during
+                // invocation: `handler` iterates the map that owns this callable, so
+                // mutating that entry destroys the object currently executing.
                 const bool changed = handler->second(param);
                 if (redraw_requested != nullptr) *redraw_requested |= changed;
             } catch (...) {

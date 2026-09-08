@@ -39,12 +39,14 @@ namespace mouse_events_example {
                 mouse->set_renderers({common, next ? second : first});
                 second_page = next;
                 selector->set_checked(next);
+                return true;
             });
             for (const auto& component : {first_switch, second_switch}) {
                 // Capturing the component weakly avoids component -> callback -> component cycles.
                 component->register_mouse_event_handler<D2duiMouseEvent::MOUSE_LEFT_CLICK_LEAVE>(
                     [weak = std::weak_ptr<D2duiSwitch>(component)](const auto&) {
                         if (const auto toggle = weak.lock()) toggle->set_checked(!toggle->checked());
+                        return true;
                     });
             }
         }

@@ -93,9 +93,9 @@ void add_ui_input_tests(TestRunner& runner) {
         auto& state = fixture.state;
         int down = 0, hold = 0, up = 0;
         auto& grid = state.main_view.measurement_grid();
-        grid.register_mouse_event_handler<Event::MOUSE_LEFT_CLICK_ENTER>([&](const auto&) { ++down; });
-        grid.register_mouse_event_handler<Event::MOUSE_LEFT_CLICK_ON>([&](const auto&) { ++hold; });
-        grid.register_mouse_event_handler<Event::MOUSE_LEFT_CLICK_LEAVE>([&](const auto&) { ++up; });
+        grid.register_mouse_event_handler<Event::MOUSE_LEFT_CLICK_ENTER>([&](const auto&) { ++down; return true; });
+        grid.register_mouse_event_handler<Event::MOUSE_LEFT_CLICK_ON>([&](const auto&) { ++hold; return true; });
+        grid.register_mouse_event_handler<Event::MOUSE_LEFT_CLICK_LEAVE>([&](const auto&) { ++up; return true; });
         const auto rect = grid.get_bounds();
         const LPARAM position = MAKELPARAM(static_cast<short>(rect.left + 2), static_cast<short>(rect.top + 2));
         main_window_proc(state.hwnd, WM_LBUTTONDOWN, MK_LBUTTON, position);
@@ -116,10 +116,10 @@ void add_ui_input_tests(TestRunner& runner) {
         common->resize({0, 0, 800, 450}, 1);
         state.main_view.common_render()->register_component(common);
         int common_cancel = 0, common_hold = 0, old_cancel = 0, new_down = 0;
-        common->register_mouse_event_handler<Event::MOUSE_CANCEL>([&](const auto&) { ++common_cancel; });
-        common->register_mouse_event_handler<Event::MOUSE_LEFT_CLICK_ON>([&](const auto&) { ++common_hold; });
-        state.main_view.measurement_grid().register_mouse_event_handler<Event::MOUSE_CANCEL>([&](const auto&) { ++old_cancel; });
-        state.main_view.calibration_grid().register_mouse_event_handler<Event::MOUSE_LEFT_CLICK_ENTER>([&](const auto&) { ++new_down; });
+        common->register_mouse_event_handler<Event::MOUSE_CANCEL>([&](const auto&) { ++common_cancel; return true; });
+        common->register_mouse_event_handler<Event::MOUSE_LEFT_CLICK_ON>([&](const auto&) { ++common_hold; return true; });
+        state.main_view.measurement_grid().register_mouse_event_handler<Event::MOUSE_CANCEL>([&](const auto&) { ++old_cancel; return true; });
+        state.main_view.calibration_grid().register_mouse_event_handler<Event::MOUSE_LEFT_CLICK_ENTER>([&](const auto&) { ++new_down; return true; });
         const auto bounds = state.main_view.measurement_grid().get_bounds();
         const LPARAM pos = MAKELPARAM(static_cast<short>(bounds.left + 2), static_cast<short>(bounds.top + 2));
         main_window_proc(state.hwnd, WM_LBUTTONDOWN, MK_LBUTTON, pos);

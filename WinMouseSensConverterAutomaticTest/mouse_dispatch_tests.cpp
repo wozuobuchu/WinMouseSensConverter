@@ -14,7 +14,7 @@ public:
     HRESULT draw(D2duiContext&) noexcept override { return S_OK; }
 };
 template<Event E> void count(Probe& p, int& value) {
-    p.register_mouse_event_handler<E>([&](const auto&) { ++value; });
+    p.register_mouse_event_handler<E>([&](const auto&) { ++value; return true; });
 }
 }
 void add_mouse_dispatch_tests(TestRunner& runner) {
@@ -55,7 +55,7 @@ void add_mouse_dispatch_tests(TestRunner& runner) {
         count<Event::MOUSE_HOVER_ON>(*a, hover);
         count<Event::MOUSE_LEFT_CLICK_ENTER>(*b, wrong);
         a->register_mouse_event_handler<Event::MOUSE_LEFT_CLICK_LEAVE>([&](const auto& p) {
-            ++releases; TEST_EXPECT_NEAR(runner, p.position.x, 150, 0);
+            ++releases; TEST_EXPECT_NEAR(runner, p.position.x, 150, 0); return true;
         });
         TEST_EXPECT(runner, window.button(VK_LBUTTON, true, 50, 50));
         window.analyser->tick();
@@ -99,7 +99,7 @@ void add_mouse_dispatch_tests(TestRunner& runner) {
         auto p = std::make_shared<Probe>(); render->register_component(p);
         std::vector<int16_t> canceled;
         int releases = 0, leave = 0;
-        p->register_mouse_event_handler<Event::MOUSE_CANCEL>([&](const auto& e) { canceled.push_back(e.vk); });
+        p->register_mouse_event_handler<Event::MOUSE_CANCEL>([&](const auto& e) { canceled.push_back(e.vk); return true; });
         count<Event::MOUSE_LEFT_CLICK_LEAVE>(*p, releases);
         count<Event::MOUSE_HOVER_LEAVE>(*p, leave);
         for (int16_t key : std::array<int16_t, 5>{VK_LBUTTON, VK_RBUTTON, VK_MBUTTON, VK_XBUTTON1, VK_XBUTTON2})
@@ -142,6 +142,7 @@ void add_mouse_dispatch_tests(TestRunner& runner) {
                     count<Event::MOUSE_HOVER_ENTER>(*added, added_calls);
                     render->register_component(added);
                 }
+                return true;
             });
             window.button(VK_LBUTTON, true, 20, 20);
             TEST_EXPECT(runner, b_calls == ((action == 0 || action == 3) ? 1 : 0));
@@ -162,12 +163,14 @@ void add_mouse_dispatch_tests(TestRunner& runner) {
         a->register_mouse_event_handler<Event::MOUSE_LEFT_CLICK_ENTER>([&](const auto&) {
             window.button(VK_LBUTTON, false, 20, 20);
             window.message(WM_CANCELMODE);
+            return true;
         });
         count<Event::MOUSE_LEFT_CLICK_LEAVE>(*a, releases);
         window.button(VK_LBUTTON, true, 20, 20);
         TEST_EXPECT(runner, cancels == 1 && b_down == 0 && releases == 0);
         a->register_mouse_event_handler<Event::MOUSE_LEFT_CLICK_ENTER>([&](const auto&) {
             window.button(VK_LBUTTON, false, 20, 20);
+            return true;
         });
         window.button(VK_LBUTTON, true, 20, 20);
         TEST_EXPECT(runner, releases == 1 && b_down == 1);
@@ -181,6 +184,7 @@ void add_mouse_dispatch_tests(TestRunner& runner) {
         p->register_mouse_event_handler<Event::MOUSE_HOVER_ENTER>([&](const auto&) {
             render->unregister_component(observer.lock());
             alive = !observer.expired();
+            return true;
         });
         render->register_component(p);
         p.reset();
@@ -200,10 +204,11 @@ void add_mouse_dispatch_tests(TestRunner& runner) {
         common->register_mouse_event_handler<Event::MOUSE_LEFT_CLICK_ENTER>([&](const auto&) {
             order.push_back(1);
             window.button(VK_LBUTTON, false);
+            return true;
         });
-        mode->register_mouse_event_handler<Event::MOUSE_LEFT_CLICK_ENTER>([&](const auto&) { order.push_back(2); });
-        common->register_mouse_event_handler<Event::MOUSE_LEFT_CLICK_LEAVE>([&](const auto&) { order.push_back(3); });
-        mode->register_mouse_event_handler<Event::MOUSE_LEFT_CLICK_LEAVE>([&](const auto&) { order.push_back(4); });
+        mode->register_mouse_event_handler<Event::MOUSE_LEFT_CLICK_ENTER>([&](const auto&) { order.push_back(2); return true; });
+        common->register_mouse_event_handler<Event::MOUSE_LEFT_CLICK_LEAVE>([&](const auto&) { order.push_back(3); return true; });
+        mode->register_mouse_event_handler<Event::MOUSE_LEFT_CLICK_LEAVE>([&](const auto&) { order.push_back(4); return true; });
         TEST_EXPECT(runner, window.button(VK_LBUTTON, true));
         TEST_EXPECT(runner, order == (std::vector<int>{1, 2, 3, 4}));
         TEST_EXPECT(runner, GetCapture() != window.hwnd);
@@ -256,6 +261,7 @@ void add_mouse_dispatch_tests(TestRunner& runner) {
             window.analyser->set_renderers({next});
             window.render.reset();
             alive_in_callback = !old.expired();
+            return true;
         });
         window.button(VK_LBUTTON, true);
         TEST_EXPECT(runner, alive_in_callback && old.expired());
@@ -329,7 +335,7 @@ void add_mouse_dispatch_tests(TestRunner& runner) {
         window.render->register_component(first);
         int enter = 0;
         count<Event::MOUSE_HOVER_ENTER>(*added, enter);
-        first->register_mouse_event_handler<Event::MOUSE_HOVER_ENTER>([&](const auto&) { page->register_component(added); });
+        first->register_mouse_event_handler<Event::MOUSE_HOVER_ENTER>([&](const auto&) { page->register_component(added); return true; });
         window.message(WM_MOUSEMOVE, 0, MAKELPARAM(20, 20));
         TEST_EXPECT(runner, enter == 0);
         window.analyser->tick();
@@ -346,11 +352,13 @@ void add_mouse_dispatch_tests(TestRunner& runner) {
                 ++down;
                 TEST_EXPECT_NEAR(runner, e.position.x, 30.0f, 0.001f);
                 TEST_EXPECT(runner, e.vk == VK_XBUTTON2 && e.down == 1);
+                return true;
             });
             p->register_mouse_event_handler<Event::MOUSE_X2_CLICK_LEAVE>([&](const auto& e) {
                 ++up;
                 TEST_EXPECT_NEAR(runner, e.position.x, -30.0f * 96.0f / static_cast<float>(dpi), 0.001f);
                 TEST_EXPECT_NEAR(runner, e.position.y, -20.0f * 96.0f / static_cast<float>(dpi), 0.001f);
+                return true;
             });
             window.message(WM_DPICHANGED, MAKEWPARAM(dpi, dpi));
             window.button(VK_XBUTTON2, true, static_cast<short>(30 * dpi / 96), 20);
@@ -368,10 +376,11 @@ void add_mouse_dispatch_tests(TestRunner& runner) {
         int down = 0, cancel = 0, up = 0;
         count<Event::MOUSE_LEFT_CLICK_ENTER>(*p, down);
         count<Event::MOUSE_CANCEL>(*p, cancel);
-        p->register_mouse_event_handler<Event::MOUSE_LEFT_CLICK_ON>([&](const auto& e) { positions.push_back(e.position.x); });
+        p->register_mouse_event_handler<Event::MOUSE_LEFT_CLICK_ON>([&](const auto& e) { positions.push_back(e.position.x); return true; });
         p->register_mouse_event_handler<Event::MOUSE_LEFT_CLICK_LEAVE>([&](const auto& e) {
             ++up;
             TEST_EXPECT_NEAR(runner, e.position.x, -30.0f, 0.001f);
+            return true;
         });
         window.button(VK_LBUTTON, true, 60, 20);
         for (UINT dpi : {144u, 192u, 96u}) {
@@ -397,6 +406,7 @@ void add_mouse_dispatch_tests(TestRunner& runner) {
         p->register_mouse_event_handler<Event::MOUSE_LEFT_CLICK_ON>([&](const auto& e) {
             ++held;
             TEST_EXPECT_NEAR(runner, e.position.x, 60.0f * 96.0f / static_cast<float>(actual_dpi), 0.001f);
+            return true;
         });
         window.button(VK_LBUTTON, true);
         for (UINT message : {WM_DPICHANGED_BEFOREPARENT, WM_DPICHANGED_AFTERPARENT}) {
@@ -421,10 +431,11 @@ void add_mouse_dispatch_tests(TestRunner& runner) {
             window.analyser->set_dpi(192);
             window.button(VK_LBUTTON, false, 60, 20);
             window.analyser->set_dpi(144);
+            return true;
         });
-        second->register_mouse_event_handler<Event::MOUSE_LEFT_CLICK_ENTER>([&](const auto& e) { positions.push_back(e.position.x); });
-        second->register_mouse_event_handler<Event::MOUSE_LEFT_CLICK_LEAVE>([&](const auto& e) { positions.push_back(e.position.x); });
-        second->register_mouse_event_handler<Event::MOUSE_HOVER_ON>([&](const auto& e) { positions.push_back(e.position.x); });
+        second->register_mouse_event_handler<Event::MOUSE_LEFT_CLICK_ENTER>([&](const auto& e) { positions.push_back(e.position.x); return true; });
+        second->register_mouse_event_handler<Event::MOUSE_LEFT_CLICK_LEAVE>([&](const auto& e) { positions.push_back(e.position.x); return true; });
+        second->register_mouse_event_handler<Event::MOUSE_HOVER_ON>([&](const auto& e) { positions.push_back(e.position.x); return true; });
         window.button(VK_LBUTTON, true, 60, 20);
         window.analyser->tick();
         window.message(WM_MOUSEMOVE, 0, MAKELPARAM(60, 20));
@@ -505,6 +516,7 @@ void add_mouse_dispatch_tests(TestRunner& runner) {
         p->register_mouse_event_handler<Event::MOUSE_LEFT_CLICK_LEAVE>([&](const auto&) {
             ++up;
             window.analyser->set_renderers({next});
+            return true;
         });
         window.button(VK_LBUTTON, true);
         window.button(VK_LBUTTON, false);
@@ -537,8 +549,9 @@ void add_mouse_dispatch_tests(TestRunner& runner) {
             window.analyser->set_renderers({next});
             window.render.reset();
             old_page.reset();
+            return true;
         });
-        page->register_mouse_event_handler<Event::MOUSE_CANCEL>([&](const auto&) { order.push_back(2); });
+        page->register_mouse_event_handler<Event::MOUSE_CANCEL>([&](const auto&) { order.push_back(2); return true; });
         window.button(VK_LBUTTON, true);
         TEST_EXPECT(runner, window.message(WM_CANCELMODE));
         TEST_EXPECT(runner, order == (std::vector<int>{1, 2}) && GetCapture() != window.hwnd);

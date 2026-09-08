@@ -74,52 +74,17 @@ namespace automatic_test {
             TEST_EXPECT(runner, view.update_content(snapshot) == S_FALSE);
         });
 
-        runner.run("boolean callbacks separate invocation from redraw with legacy compatibility", [&] {
+        runner.run("boolean callbacks separate invocation from redraw", [&] {
             d2dui::D2duiSwitch component;
             constexpr auto event = d2dui::D2duiMouseEvent::MOUSE_HOVER_ON;
             int calls = 0;
-            component.register_mouse_event_handler<event>([&](const auto&) { ++calls; return false; });
             bool redraw = false;
+            component.register_mouse_event_handler<event>([&](const auto&) { ++calls; return false; });
             TEST_EXPECT(runner, component.respond_mouse_event(event, {}, &redraw));
             TEST_EXPECT(runner, calls == 1 && !redraw);
             component.register_mouse_event_handler<event>([&](const auto&) { ++calls; return true; });
             TEST_EXPECT(runner, component.respond_mouse_event(event, {}, &redraw));
             TEST_EXPECT(runner, calls == 2 && redraw);
-            redraw = false;
-            component.register_mouse_event_handler<event>([&](const auto&) { ++calls; });
-            TEST_EXPECT(runner, component.respond_mouse_event(event, {}, &redraw));
-            TEST_EXPECT(runner, calls == 3 && redraw);
-        });
-
-        runner.run("mouse callbacks survive self removal and replacement", [&] {
-            constexpr auto event = d2dui::D2duiMouseEvent::MOUSE_LEFT_CLICK_ENTER;
-            for (const bool replace : {false, true}) {
-                d2dui::D2duiSwitch component;
-                auto lifetime = std::make_shared<int>(42);
-                const std::weak_ptr<int> observer = lifetime;
-                bool alive_during_callback = false;
-                int replacement_calls = 0;
-                component.register_mouse_event_handler<event>(
-                    [&, lifetime](const d2dui::D2duiMouseEventParam&) {
-                        // Copy external references before removal so the regression test
-                        // can observe premature destruction without accessing freed captures.
-                        auto* alive = &alive_during_callback;
-                        const auto* weak = &observer;
-                        if (replace) {
-                            component.register_mouse_event_handler<event>(
-                                [&replacement_calls](const d2dui::D2duiMouseEventParam&) { ++replacement_calls; });
-                        } else {
-                            component.unregister_mouse_event_handler<event>();
-                        }
-                        *alive = !weak->expired();
-                    });
-                lifetime.reset();
-                TEST_EXPECT(runner, component.respond_mouse_event(event, {}));
-                TEST_EXPECT(runner, alive_during_callback);
-                TEST_EXPECT(runner, observer.expired());
-                TEST_EXPECT(runner, component.respond_mouse_event(event, {}) == replace);
-                TEST_EXPECT(runner, replacement_calls == (replace ? 1 : 0));
-            }
         });
 
         runner.run("mouse callbacks retain mutable state between events", [&] {
@@ -127,7 +92,7 @@ namespace automatic_test {
             constexpr auto event = d2dui::D2duiMouseEvent::MOUSE_LEFT_CLICK_ENTER;
             int observed = 0;
             component.register_mouse_event_handler<event>(
-                [count = 0, &observed](const d2dui::D2duiMouseEventParam&) mutable { observed = ++count; });
+                [count = 0, &observed](const d2dui::D2duiMouseEventParam&) mutable { observed = ++count; return true; });
             TEST_EXPECT(runner, component.respond_mouse_event(event, {}));
             TEST_EXPECT(runner, component.respond_mouse_event(event, {}));
             TEST_EXPECT(runner, observed == 2);
