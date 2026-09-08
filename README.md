@@ -74,6 +74,12 @@ The Calibration header shows `CALDIS` in the selected Unit. A physical unit disp
 
 Switching between Measurement and Calibration preserves the active recording state and accumulated X/Y values. It does not stop or clear the current session.
 
+#### On-window controls
+
+- Left-click the bottom status bar to start or stop recording. Starting clears the previous result, just like the recording key.
+- Left-click the value area to copy the displayed text. Measurement copies X followed by Y, without axis labels or units; Calibration copies the displayed DPI text. Copied values use the display's current precision.
+- Hovering highlights the status bar or value card. Stop recording before moving the pointer to copy a final result.
+
 ### What WinMouseSensConverter does
 
 WinMouseSensConverter measures how far the mouse moves while an in-game camera rotates through a known horizontal angle. Repeating the same measurement in another game lets you tune that game's sensitivity until both games require the same mouse travel for the same rotation.
@@ -147,7 +153,7 @@ recording_key = 0x71
 
 `recording_key` accepts a Windows Virtual-Key value from `1` through `254`: decimal such as `113`, or hexadecimal such as `0x71` or `0X71`. The application writes two-digit uppercase hexadecimal. The modeless custom field accepts at most four characters: decimal `1`–`254`, or `0x`/`0X` plus one or two hexadecimal digits. The main window uses the Windows key name when available and falls back to `VK 0xNN`. Values emitted by keyboard Raw Input can trigger recording; the five physical mouse buttons are also available as `VK_LBUTTON` (`1`), `VK_RBUTTON` (`2`), `VK_MBUTTON` (`4`), `VK_XBUTTON1` (`5`), and `VK_XBUTTON2` (`6`). Menu changes take effect immediately; file edits take effect at the next startup.
 
-Selecting a custom calibration distance keeps **Custom...** checked for the rest of the run, even when the value is `10`, `20`, or `50`. Only the number is saved; those three values map back to presets at the next startup. Custom recording keys behave the same way: Custom remains checked for the run, while saved preset values map back to their preset command after restart. Existing valid configurations, including `F1`, remain valid.
+Selecting a custom calibration distance keeps **Custom...** checked for the rest of the run, even when the value is `10`, `20`, or `50`. Only the number is saved; those three values map back to presets at the next startup. Custom recording keys behave the same way: Custom remains checked for the run, while saved preset values map back to their preset command after restart.
 
 Custom Reference DPI follows the same runtime rule: a successful custom submission keeps **Custom...** checked even when the number matches a DPI preset. At the next startup, saved preset numbers map back to their preset commands and all other valid values map to Custom.
 
@@ -237,7 +243,7 @@ The input thread registers keyboard and mouse Raw Input to one message-only wind
 
 At each UI polling boundary, keyboard and mouse-button events are applied before the pending mouse snapshot is sampled. Starting recording clears the displayed totals and then attributes that pending snapshot to the new session. Stopping turns recording off before the pending snapshot is drained, so that snapshot is discarded.
 
-Keyboard, mouse-button, and movement reports share one Raw Input drain, but the UI still applies all pending key events before sampling the complete pending mouse snapshot. Keep the mouse stationary while pressing the recording key; otherwise movement from the same UI polling interval may fall inside or outside the intended recording interval.
+Keyboard, mouse-button, and movement reports share one Raw Input drain, but the UI still applies up to 1024 queued key events before sampling the complete pending mouse snapshot. Keep the mouse stationary while pressing the recording key; otherwise movement from the same UI polling interval may fall inside or outside the intended recording interval.
 
 #### Sources of measurement error
 
@@ -246,7 +252,7 @@ Small differences between repeated raw-count measurements are normal and do not 
 | Category | Possible cause | Effect |
 | --- | --- | --- |
 | Reference-angle error | The crosshair does not return to the same pixel; the reference is broad; the target is overshot and corrected; animation or camera shake changes the view. | The real rotation angle differs between trials. |
-| Start/stop timing | The mouse is still moving at a key press; motion starts before the sound; independent streams reach different UI polling boundaries. | Boundary packets can fall inside or outside the trial. |
+| Start/stop timing | The mouse is still moving at a key press; motion starts before the sound; key events and the movement snapshot are consumed separately at the UI polling boundary. | Boundary packets can fall inside or outside the trial. |
 | Mouse path and posture | Wrist/arm posture changes; the mouse yaws; a nominally horizontal path becomes an arc. | Sensor X counts vary even when hand travel looks similar. |
 | Ruler alignment | The ruler is not aligned with sensor travel; marks are broad; different shell reference points are used. | The supplied distance differs from the sensor's net displacement. |
 | Reversal and correction | The path curves, overshoots, reverses, or is corrected; calibration uses the final vector, not path length. | Vector length no longer represents ruler travel reliably. |
@@ -277,8 +283,8 @@ Small differences between repeated raw-count measurements are normal and do not 
 - Relative reports from all mouse devices are merged; a specific mouse cannot be selected.
 - Both X and Y are displayed; horizontal X is the intended cross-game comparison.
 - The application does not identify games, infer settings, or modify game configuration.
-- Measurements are neither saved nor exported; a new recording replaces the previous result.
-- Calibrated DPI is display-only and does not update Reference DPI or persist as a result.
+- Results can be copied to the clipboard, but there is no measurement-history or file-export feature; a new recording replaces the previous result.
+- Calibrated DPI can be displayed and copied; it does not update Reference DPI or persist as a result.
 - Games, anti-cheat systems, remote desktop, virtual machines, drivers, overlays, or exclusive-input modes may prevent background input or recording-key control.
 - Matching travel for a chosen rotation cannot make different FOV, animation, recoil, or aim-assist systems feel identical.
 
@@ -290,7 +296,7 @@ Small differences between repeated raw-count measurements are normal and do not 
 - Confirm that the displayed key matches `recording_key` and that the keyboard or supported physical mouse button actually emits that VK value.
 - Test on the Windows desktop to distinguish game compatibility from application startup.
 - Check the game, overlays, keyboard utilities, remote desktop, drivers, and anti-cheat interception.
-- Input-thread registration failures are not shown as a separate UI error; a responsive window with no keyboard or mouse data can indicate that a capture thread did not start.
+- If input-thread initialization or Raw Input registration fails, the application exits silently with code `1` before opening its main window. An already-open window is not evidence of this startup failure.
 
 **Converted centimeters do not match a ruler**
 
@@ -357,11 +363,11 @@ The keyboard path splits generic Shift, Control, and Alt reports into left/right
 
 `sync.hpp` keeps cross-mode runtime state in `app_data`: the recording flag, current mode, and accumulated X/Y totals. `app_func::toggle_recording` centralizes recording transitions, clears the totals only when recording starts, and plays the corresponding start or stop sound. Mode changes also update the persisted `UserConfig`, but they do not create a second state container or reset active measurement data.
 
-Window, menu, DPI, display, sizing, paint, and input events only mark `UiState::redraw_dirty`. Actual Direct2D rendering occurs in `finish_main_loop_iteration` only on the main 8 ms timer, skips interactive sizing and minimized windows, and clears the flag after a successful frame. Device-dependent resources are recreated when necessary. DirectWrite layout caches reuse text layouts and scale long header/numeric content to fit. The default client size is `1280 × 720` DIPs and the minimum is `640 × 360` DIPs; the manifest selects Per-Monitor V2 DPI awareness.
+Window, menu, DPI, display, sizing, paint, and input handlers update state and request redraws through `UiState::redraw_dirty`. Actual Direct2D rendering occurs in `finish_main_loop_iteration` only on the main 8 ms timer, skips interactive sizing and minimized windows, and clears the flag after a successful frame. Device-dependent resources are recreated when necessary. DirectWrite layout caches reuse text layouts and scale long header/numeric content to fit. The default client size is `1280 × 720` DIPs and the minimum is `640 × 360` DIPs; the manifest selects Per-Monitor V2 DPI awareness.
 
-Measurement values use three decimal places, normalize converted magnitudes smaller than `0.0005` to displayed zero, and switch to scientific notation for non-finite or extremely large values. Calibration shows `— DPI` before any movement, normally uses two decimal places, and also falls back to scientific notation for extremely large results. The two Measurement cards share the smaller calculated fit scale so X and Y retain consistent typography.
+Measurement values use three decimal places, normalize converted magnitudes smaller than `0.0005` to displayed zero, and switch to scientific notation for non-finite or extremely large values. Calibration shows `— DPI` when the net vector magnitude is zero, normally uses two decimal places, and also falls back to scientific notation for extremely large results. The two Measurement cards share the smaller calculated fit scale so X and Y retain consistent typography.
 
-The UI uses a portable C++20 header-only component library under `D2DUILIB`. Components handle layout and rendering; the application updates their state through setters and selects render queues for the current display mode. Each selected queue draws all its registered components in registration order. The view and render queues share component ownership through `std::shared_ptr`; removing a component from a queue does not destroy it while an external shared owner remains. One window-level `D2duiContext` owns and caches the Direct2D/DirectWrite resources. The application keeps three persistent component queues: common, Measurement, and Calibration. Each frame opens one Direct2D transaction, draws the common queue followed by exactly one mode queue, and closes that transaction. Switching modes neither recreates components nor duplicates the cross-mode state. The view owns all three render queues through `std::shared_ptr<D2duiSystemRender>`. A window-level `d2dui::MouseEventAnalyser` shares ownership of the ordered active queues and handles mouse messages, signed pixel-to-DIP conversion, hover/button state, capture, lifecycle cancellation, and reentrant dispatch independently of rendering. The analyser exposes `set_dpi(UINT)` for explicit DPI synchronization and handles Per-Monitor DPI V2 changes through `WM_DPICHANGED` and the child before/after-parent notifications, preserving capture. The host forwards window messages and drives `tick()` from its existing 8 ms timer; callback results only mark the UI dirty. Mode changes replace the analyser's active list with common plus the new mode, canceling only the outgoing queue and preserving the common interaction and physical-button baseline. Render queues only manage components and draw them; the analyser has no configuration or business-state dependency. See the [library API and integration guide](WinMouseSensConverter/D2DUILIB/README.md#mouse-interaction) and [standalone Win32 example](WinMouseSensConverter/D2DUILIB/examples/mouse_events.cpp). About, Instruction, custom DPI, custom calibration-distance, and custom recording-key windows remain modeless and are routed through `ui::preprocess_modeless_dialog_message`.
+The UI uses a reusable Windows C++20 header-only component library under `D2DUILIB`. Components handle layout and rendering; the application updates their state through setters and selects render queues for the current display mode. Each selected queue draws all its registered components in registration order. The view and render queues share component ownership through `std::shared_ptr`; removing a component from a queue does not destroy it while an external shared owner remains. One window-level `D2duiContext` owns and caches the Direct2D/DirectWrite resources. The application keeps three persistent component queues: common, Measurement, and Calibration. Each frame opens one Direct2D transaction, draws the common queue followed by exactly one mode queue, and closes that transaction. Switching modes neither recreates components nor duplicates the cross-mode state. The view owns all three render queues through `std::shared_ptr<D2duiSystemRender>`. A window-level `d2dui::MouseEventAnalyser` shares ownership of the ordered active queues and handles mouse messages, signed pixel-to-DIP conversion, hover/button state, capture, lifecycle cancellation, and reentrant dispatch independently of rendering. The analyser exposes `set_dpi(UINT)` for explicit DPI synchronization and handles Per-Monitor DPI V2 changes through `WM_DPICHANGED` and the child before/after-parent notifications, preserving capture. The host forwards window messages and drives `tick()` from its existing 8 ms timer; callback results only mark the UI dirty. Mode changes replace the analyser's active list with common plus the new mode, canceling only the outgoing queue and preserving the common interaction and physical-button baseline. Render queues only manage components and draw them; the analyser has no configuration or business-state dependency. See the [library API and integration guide](WinMouseSensConverter/D2DUILIB/README.md#mouse-interaction) and [standalone Win32 example](WinMouseSensConverter/D2DUILIB/examples/mouse_events.cpp). About, Instruction, custom DPI, custom calibration-distance, and custom recording-key windows remain modeless and are routed through `ui::preprocess_modeless_dialog_message`.
 
 #### Configuration lifecycle
 
@@ -396,16 +402,16 @@ Requirements:
 - Visual Studio with MSBuild, the MSVC `v145` C++ toolset, Windows 10 SDK, and **Desktop development with C++**.
 - `vswhere.exe`, normally installed by Visual Studio Installer.
 - [vcpkg](https://github.com/microsoft/vcpkg) using classic MSBuild integration.
-- Boost.Lockfree and Boost.CircularBuffer headers for the `x64-windows` triplet.
+- Boost.Lockfree headers for the `x64-windows` triplet.
 
-The repository intentionally has no `vcpkg.json`. Install and integrate its third-party build dependencies when needed:
+The repository currently has no `vcpkg.json`. Install and integrate its third-party build dependencies when needed:
 
 ```powershell
-vcpkg install boost-lockfree:x64-windows boost-circular-buffer:x64-windows
+vcpkg install boost-lockfree:x64-windows
 vcpkg integrate install
 ```
 
-Direct2D and DirectWrite come from the Windows SDK through `d2d1.lib` and `dwrite.lib`. Boost.Lockfree and Boost.CircularBuffer are header-only for this application, so there is no additional third-party runtime-library requirement.
+Direct2D and DirectWrite come from the Windows SDK through `d2d1.lib` and `dwrite.lib`. Boost.Lockfree is header-only for this application, so there is no additional third-party runtime-library requirement.
 
 Run from the repository root and keep `-NoRestore` for normal builds after dependencies are installed:
 
@@ -442,11 +448,11 @@ The runner builds by default. Use `-NoBuild` only after the selected configurati
 .\WinMouseSensConverterAutomaticTest\run_tests.ps1 -Configuration Debug -NoBuild
 ```
 
-Tests cover configuration parsing and serialization, recording-state transitions, unit and calibration calculations, component ownership and behavior, the three-render contract, and DirectWrite layout reuse. Recording-transition tests suppress notification sounds. Rendering tests create only a hidden ordinary test window; they do not create Raw Input threads, access saved user configuration, require physical devices, or start the elevated main executable.
+Tests cover configuration parsing and serialization, recording-state transitions, unit and calibration calculations, component ownership and behavior, the common-plus-one-mode rendering contract, DirectWrite layout reuse, mouse dispatch, and UI input scheduling. Recording-transition tests suppress notification sounds. Rendering tests create only a hidden ordinary test window; they do not create Raw Input threads, access saved user configuration, require physical devices, or start the elevated main executable.
 
 #### Contributing
 
-Issues and pull requests are welcome. Preserve the combined Raw Input thread, its shared key-state deduplication and single-producer/single-consumer design, keep cross-mode state in `sync.hpp`, keep mode renderers isolated, and avoid reciprocal include dependencies. Do not add blocking waits, file/network operations, modal dialogs, or thread joins to menu or paint paths. Visible-state events must only mark the redraw dirty; keep rendering in the timer-gated main-loop path. Help windows must remain modeless, resource scripts must remain UTF-8 with `#pragma code_page(65001)`, and relevant changes must pass both Debug x64 and Release x64 validation.
+Issues and pull requests are welcome. See [AGENTS.md](AGENTS.md) for implementation constraints and validation policy. Code and build changes require Debug and Release x64 validation; documentation-only edits require checking behavior, commands, and links against the repository.
 
 #### License
 
@@ -514,6 +520,12 @@ Calibration 顶部的 `CALDIS` 使用当前 Unit 显示目标定标距离：物�
 > Reference DPI 和 Unit 都不参与定标 DPI 公式，定标结果也不会覆盖 Reference DPI。如需用定标结果进行后续物理距离换算，请在 **Options → Reference DPI → Custom...** 中手工输入合适的数值。
 
 在 Measurement 与 Calibration 之间切换会保留当前录制状态和累计 X/Y 值，不会停止或清除当前记录。
+
+#### 窗口内操作
+
+- 左键单击底部状态栏可开始或停止录制；与录制键一样，开始时会清除旧结果。
+- 左键单击数值区域可复制当前显示文本。Measurement 按 X、Y 顺序复制，不附带轴标签或单位；Calibration 复制显示的 DPI 文本。复制值保留界面当前显示精度。
+- 鼠标悬停时会高亮状态栏或数值卡片。复制最终结果前，应先停止录制，再移动指针。
 
 ### WinMouseSensConverter 能做什么
 
@@ -588,7 +600,7 @@ recording_key = 0x71
 
 `recording_key` 接受 `1`～`254` 的 Windows Virtual-Key 数值，可以使用 `113` 这样的十进制，也可以使用 `0x71` 或 `0X71` 这样的十六进制。程序保存时统一写为两位大写十六进制。非模态自定义输入框最多接受四个字符：十进制 `1`～`254`，或 `0x`/`0X` 后跟一至两位十六进制数字。主界面优先显示 Windows 提供的按键名称，无法取得时显示 `VK 0xNN`。键盘 Raw Input 实际产生的 VK 值可以触发录制；五个物理鼠标键也分别可用 `VK_LBUTTON`（`1`）、`VK_RBUTTON`（`2`）、`VK_MBUTTON`（`4`）、`VK_XBUTTON1`（`5`）和 `VK_XBUTTON2`（`6`）配置。菜单修改立即生效；手工文件修改在下次启动时生效。
 
-选择自定义定标距离后，即使输入 `10`、`20` 或 `50`，本次运行也会保持 **Custom...** 选中；保存时只写数值，下次启动时这三个值会重新映射到预设。自定义录制键采用同样规则：本次运行保持 Custom，重启后已保存的预设值重新映射到预设命令。现有合法配置（包括 `F1`）仍然有效。
+选择自定义定标距离后，即使输入 `10`、`20` 或 `50`，本次运行也会保持 **Custom...** 选中；保存时只写数值，下次启动时这三个值会重新映射到预设。自定义录制键采用同样规则：本次运行保持 Custom，重启后已保存的预设值重新映射到预设命令。
 
 自定义 Reference DPI 也遵循同样的本次运行规则：成功提交后即使数值与 DPI 预设相同，也会保持 **Custom...** 选中。下次启动时，已保存的预设数值重新映射到预设命令，其他合法值映射到 Custom。
 
@@ -678,7 +690,7 @@ Windows 将 `RAWMOUSE::lLastX` 和 `lLastY` 定义为有符号位移；相对报
 
 每个 UI 轮询边界都会先处理键盘和鼠标按键事件，再提取待处理鼠标快照。开始录制会清空显示累计值，然后把该待处理快照归入新记录；停止录制会先关闭记录，再提取并丢弃该快照。
 
-键盘、鼠标按键和移动报告由同一次 Raw Input 排空处理，但 UI 仍先应用所有待处理按键事件，再提取完整的待处理鼠标快照。按录制键时应保持鼠标静止，否则同一 UI 轮询区间内的移动可能落在预期录制区间内或区间外。
+键盘、鼠标按键和移动报告由同一次 Raw Input 排空处理，但 UI 仍先应用最多 1024 个排队按键事件，再提取完整的待处理鼠标快照。按录制键时应保持鼠标静止，否则同一 UI 轮询区间内的移动可能落在预期录制区间内或区间外。
 
 #### 测量误差来源
 
@@ -687,7 +699,7 @@ Windows 将 `RAWMOUSE::lLastX` 和 `lLastY` 定义为有符号位移；相对报
 | 类别 | 可能原因 | 影响 |
 | --- | --- | --- |
 | 参照角度误差 | 准星没有回到同一像素；参照物太宽；越过目标后回调；动画或镜头晃动改变视角。 | 每次实际旋转角度不同。 |
-| 人为起止时机 | 按键时鼠标仍在移动；在提示音前提前动作；独立输入流到达不同 UI 轮询边界。 | 边界数据包可能进入或离开测量。 |
+| 人为起止时机 | 按键时鼠标仍在移动；在提示音前提前动作；UI 在轮询边界分别消费按键事件与移动快照。 | 边界数据包可能进入或离开测量。 |
 | 鼠标轨迹与姿态 | 手腕/手臂姿势改变；鼠标自身偏转；水平移动变成弧线。 | 即使手部距离相似，传感器 X 计数也会变化。 |
 | 尺子与端点对齐 | 尺子与传感器方向不一致；刻度太宽；两端使用不同外壳参照点。 | 输入距离与传感器净位移不一致。 |
 | 反向与回调 | 轨迹弯曲、越界、反向或修正；定标只取最终向量，不累计路径长度。 | 向量长度无法可靠代表尺子路径。 |
@@ -718,8 +730,8 @@ Windows 将 `RAWMOUSE::lLastX` 和 `lLastY` 定义为有符号位移；相对报
 - 所有鼠标设备的相对报告会被合并，不能选择特定鼠标。
 - 界面同时显示 X 与 Y；跨游戏比较使用水平 X。
 - 程序不会识别游戏、推断设置或修改游戏配置。
-- 测量不保存也不导出；开始新记录会替换旧结果。
-- 定标 DPI 只用于显示，不会更新 Reference DPI，也不会作为结果持久化。
+- 结果可复制到剪贴板，但不提供测量历史或文件导出功能；开始新记录会替换旧结果。
+- 定标 DPI 可显示和复制，不会更新 Reference DPI，也不会作为结果持久化。
 - 游戏、反作弊、远程桌面、虚拟机、驱动、覆盖层或独占输入模式可能阻止后台输入或录制键控制。
 - 匹配指定旋转所需距离，无法让不同 FOV、动画、后坐力或辅助瞄准产生完全相同的主观手感。
 
@@ -731,7 +743,7 @@ Windows 将 `RAWMOUSE::lLastX` 和 `lLastY` 定义为有符号位移；相对报
 - 确认界面显示的按键与 `recording_key` 一致，并且键盘或受支持的物理鼠标键确实产生该 VK 值。
 - 先在 Windows 桌面测试，以区分游戏兼容性与程序启动问题。
 - 检查游戏、覆盖层、键盘工具、远程桌面、驱动或反作弊是否拦截输入。
-- 输入线程注册失败不会显示独立错误提示；如果窗口正常响应但完全没有键盘或鼠标数据，可能是采集线程没有启动。
+- 输入线程初始化或 Raw Input 注册失败时，程序不显示提示，直接以退出码 `1` 退出，不会打开主窗口；已经打开的窗口不能用这一启动失败解释。
 
 **换算出的厘米数与尺子不一致**
 
@@ -798,11 +810,11 @@ flowchart LR
 
 `sync.hpp` 在 `app_data` 中保存跨模式运行时状态：录制标志、当前模式和累计 X/Y。`app_func::toggle_recording` 集中处理录制切换，仅在开始录制时清零累计值，并播放对应的开始或停止提示音。切换模式还会更新持久化 `UserConfig`，但不会创建第二套状态容器，也不会重置当前测量。
 
-窗口、菜单、DPI、显示器、尺寸、系统绘制和输入事件只设置 `UiState::redraw_dirty`。实际 Direct2D 绘制仅在 `finish_main_loop_iteration` 的主窗口 8 ms 定时器节拍发生；交互式缩放和最小化期间跳过，成功绘制后清除脏标记。设备相关资源会按需重建。DirectWrite 布局缓存会复用文字布局，并缩放过长的标题或数值以适应空间。默认客户区为 `1280 × 720` DIP，最小为 `640 × 360` DIP；清单启用 Per-Monitor V2 DPI 感知。
+窗口、菜单、DPI、显示器、尺寸、系统绘制和输入处理器更新状态，并设置重绘标记 `UiState::redraw_dirty`。实际 Direct2D 绘制仅在 `finish_main_loop_iteration` 的主窗口 8 ms 定时器节拍发生；交互式缩放和最小化期间跳过，成功绘制后清除脏标记。设备相关资源会按需重建。DirectWrite 布局缓存会复用文字布局，并缩放过长的标题或数值以适应空间。默认客户区为 `1280 × 720` DIP，最小为 `640 × 360` DIP；清单启用 Per-Monitor V2 DPI 感知。
 
-Measurement 数值使用三位小数，把换算后绝对值小于 `0.0005` 的结果显示为零，并在非有限值或极大数值时改用科学计数法。尚未产生移动时，Calibration 显示 `— DPI`；通常使用两位小数，极大结果同样改用科学计数法。两个 Measurement 卡片共同采用较小的计算适配比例，使 X/Y 字体尺寸保持一致。
+Measurement 数值使用三位小数，把换算后绝对值小于 `0.0005` 的结果显示为零，并在非有限值或极大数值时改用科学计数法。净向量长度为零时，Calibration 显示 `— DPI`；通常使用两位小数，极大结果同样改用科学计数法。两个 Measurement 卡片共同采用较小的计算适配比例，使 X/Y 字体尺寸保持一致。
 
-界面使用位于 `D2DUILIB` 下、可迁移的 C++20 header-only 组件库。组件负责布局与绘制；应用通过状态设置接口更新组件，并为当前显示模式选择渲染队列。每个选中的队列按注册顺序绘制其中的全部组件。视图与渲染队列通过 `std::shared_ptr` 共享组件所有权；只要外部仍持有共享指针，组件移出队列后就不会销毁。窗口级唯一 `D2duiContext` 统一拥有并缓存 Direct2D/DirectWrite 资源；应用长期保存公共、Measurement 和 Calibration 三个组件队列。每帧只开启一次 Direct2D 绘制事务，先绘制公共队列，再绘制当前模式的一个队列，最后统一结束事务。模式切换不会重建组件，也不会复制跨模式状态。视图通过 `std::shared_ptr<D2duiSystemRender>` 持有三个渲染队列，窗口级 `d2dui::MouseEventAnalyser` 共享持有有序的活动队列，独立于绘制处理鼠标消息、有符号像素到 DIP 的转换、悬停和按钮状态、系统捕获、生命周期取消及重入分发。分析器提供 `set_dpi(UINT)` 供宿主显式同步 DPI，并处理 Per-Monitor DPI V2 的 `WM_DPICHANGED` 和子窗口的 before/after-parent 通知，更新时保留捕获。应用只转发窗口消息，并由现有 8 ms 定时器调用 `tick()`；回调结果仅设置 UI dirty 标记。模式切换将分析器的活动列表更新为公共队列与新模式队列，只取消退出队列，保留公共交互和物理按键基线。Render 仅管理和绘制组件；分析器不依赖配置或业务状态。接口与接入方法见[库文档](WinMouseSensConverter/D2DUILIB/README.md#mouse-interaction)和[独立 Win32 示例](WinMouseSensConverter/D2DUILIB/examples/mouse_events.cpp)。“关于”、“使用说明”、自定义 DPI、自定义定标距离和自定义录制键窗口保持非模态，并统一经过 `ui::preprocess_modeless_dialog_message`。
+界面使用位于 `D2DUILIB` 下、可复用的 Windows C++20 header-only 组件库。组件负责布局与绘制；应用通过状态设置接口更新组件，并为当前显示模式选择渲染队列。每个选中的队列按注册顺序绘制其中的全部组件。视图与渲染队列通过 `std::shared_ptr` 共享组件所有权；只要外部仍持有共享指针，组件移出队列后就不会销毁。窗口级唯一 `D2duiContext` 统一拥有并缓存 Direct2D/DirectWrite 资源；应用长期保存公共、Measurement 和 Calibration 三个组件队列。每帧只开启一次 Direct2D 绘制事务，先绘制公共队列，再绘制当前模式的一个队列，最后统一结束事务。模式切换不会重建组件，也不会复制跨模式状态。视图通过 `std::shared_ptr<D2duiSystemRender>` 持有三个渲染队列，窗口级 `d2dui::MouseEventAnalyser` 共享持有有序的活动队列，独立于绘制处理鼠标消息、有符号像素到 DIP 的转换、悬停和按钮状态、系统捕获、生命周期取消及重入分发。分析器提供 `set_dpi(UINT)` 供宿主显式同步 DPI，并处理 Per-Monitor DPI V2 的 `WM_DPICHANGED` 和子窗口的 before/after-parent 通知，更新时保留捕获。应用只转发窗口消息，并由现有 8 ms 定时器调用 `tick()`；回调结果仅设置 UI dirty 标记。模式切换将分析器的活动列表更新为公共队列与新模式队列，只取消退出队列，保留公共交互和物理按键基线。Render 仅管理和绘制组件；分析器不依赖配置或业务状态。接口与接入方法见[库文档](WinMouseSensConverter/D2DUILIB/README.md#mouse-interaction)和[独立 Win32 示例](WinMouseSensConverter/D2DUILIB/examples/mouse_events.cpp)。“关于”、“使用说明”、自定义 DPI、自定义定标距离和自定义录制键窗口保持非模态，并统一经过 `ui::preprocess_modeless_dialog_message`。
 
 #### 配置生命周期
 
@@ -837,16 +849,16 @@ Measurement 数值使用三位小数，把换算后绝对值小于 `0.0005` 的�
 - Visual Studio，并安装 MSBuild、MSVC `v145` C++ 工具集、Windows 10 SDK 和**使用 C++ 的桌面开发**工作负载。
 - 通常由 Visual Studio Installer 安装的 `vswhere.exe`。
 - 使用经典 MSBuild 集成的 [vcpkg](https://github.com/microsoft/vcpkg)。
-- `x64-windows` triplet 的 Boost.Lockfree 和 Boost.CircularBuffer 头文件。
+- `x64-windows` triplet 的 Boost.Lockfree 头文件。
 
-仓库特意不提供 `vcpkg.json`。缺少依赖时，安装并集成第三方构建依赖：
+仓库目前没有 `vcpkg.json`。缺少依赖时，安装并集成第三方构建依赖：
 
 ```powershell
-vcpkg install boost-lockfree:x64-windows boost-circular-buffer:x64-windows
+vcpkg install boost-lockfree:x64-windows
 vcpkg integrate install
 ```
 
-Direct2D 和 DirectWrite 由 Windows SDK 通过 `d2d1.lib`、`dwrite.lib` 提供。Boost.Lockfree 和 Boost.CircularBuffer 在本程序中作为头文件依赖使用，因此没有额外第三方运行时库要求。
+Direct2D 和 DirectWrite 由 Windows SDK 通过 `d2d1.lib`、`dwrite.lib` 提供。Boost.Lockfree 在本程序中作为头文件依赖使用，因此没有额外第三方运行时库要求。
 
 在仓库根目录运行；依赖已安装后，常规构建保留 `-NoRestore`：
 
@@ -883,11 +895,11 @@ x64\Release\WinMouseSensConverter.exe
 .\WinMouseSensConverterAutomaticTest\run_tests.ps1 -Configuration Debug -NoBuild
 ```
 
-测试覆盖配置解析与序列化、录制状态切换、单位与定标计算、组件所有权与行为、三 Render 绘制契约和 DirectWrite 布局复用。录制切换测试会禁用提示音。渲染测试只创建隐藏的普通测试窗口，不会创建 Raw Input 线程、访问已保存的用户配置、要求真实输入设备或启动需要提权的主程序。
+测试覆盖配置解析与序列化、录制状态切换、单位与定标计算、组件所有权与行为、公共队列加一个模式队列的绘制契约、DirectWrite 布局复用、鼠标事件分发和 UI 输入调度。录制切换测试会禁用提示音。渲染测试只创建隐藏的普通测试窗口，不会创建 Raw Input 线程、访问已保存的用户配置、要求真实输入设备或启动需要提权的主程序。
 
 #### 参与贡献
 
-欢迎提交 Issue 和 Pull Request。请保留合并后的 Raw Input 线程、共享按键状态去重和单生产者/单消费者设计，把跨模式状态保留在 `sync.hpp`，隔离各模式渲染器，并避免互相依赖的 include。不要在菜单或绘制路径中加入阻塞等待、文件/网络操作、模态窗口或线程 `join`。可见状态事件只能设置重绘脏标记，绘制必须留在定时器门控的主循环路径。帮助窗口必须保持非模态，资源脚本必须保持 UTF-8 和 `#pragma code_page(65001)`；相关改动必须同时通过 Debug x64 与 Release x64 验证。
+欢迎提交 Issue 和 Pull Request。实现约束与验证规则见 [AGENTS.md](AGENTS.md)。代码及构建改动需验证 Debug 和 Release x64；纯文档修改只需对照仓库核查行为、命令与链接。
 
 #### 许可证
 

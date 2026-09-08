@@ -6,15 +6,15 @@ WinMouseSensConverter is a native Windows desktop application written in C++20. 
 
 Key behavior:
 
-- Pressing the configured recording key starts or stops recording.
+- Pressing the configured recording key or left-clicking the status bar starts or stops recording through `app_func::toggle_recording`.
+- Left-clicking a value grid copies its displayed values to the clipboard (X then Y in Measurement, the DPI text in Calibration).
 - Starting a recording clears the previous measurement.
 - Measurement mode displays signed X/Y movement: right/down are positive and left/up are negative.
-- Calibration mode uses `hypot(dx, dy)` and `calibrated_dpi = counts / (calibration_distance_cm / 2.54)`. Reference DPI and output unit affect the displayed comparison distances, not the calibrated-DPI result.
+- Calibration mode uses `hypot(dx, dy)` and `calibrated_dpi = counts / (calibration_distance_cm / 2.54)`. Unit controls the `CALDIS` ruler-distance display; Reference DPI supplies its raw-count equivalent. Neither affects calibrated DPI.
 - Switching modes preserves the active recording and accumulated X/Y values.
-- Default settings are Measurement mode, `800` Reference DPI, `cm`, a `10 cm` calibration distance, and `F2`.
-- Supported output units are raw counts, inches, millimeters, centimeters, decimeters, and meters.
+- Defaults, presets, input ranges, and the configuration format are documented in `README.md`; keep both language sections consistent with `config.hpp` and `ui.cpp`.
 - Keyboard events, mouse-button events, and mouse movement are collected by one dedicated Raw Input message thread. The main UI thread consumes the SPSC key-event queue and packed movement snapshots, then renders with Direct2D and DirectWrite.
-- About, Instruction, custom DPI, custom calibration-distance, and custom recording-key windows are modeless. UI work must not block the main UI loop or the Raw Input thread.
+- Input startup is explicit and owned by the entry-point lifetime guard. Registration failure exits with code `1` before configuration I/O or window creation; do not introduce input-thread startup as an include side effect.
 - The executable manifest requires administrator privileges at startup.
 
 ## Build policy
@@ -37,6 +37,8 @@ Run the automatic tests from the repository root. The runner builds by default; 
 
 The test executable must remain a console application that runs as the current user. Do not add or inherit the main application's administrator manifest or start the main executable from the test runner.
 
+Validate code and build changes with both Debug and Release x64 builds and relevant automatic tests. Documentation-only changes require checking the described behavior, commands, and links against the repository; no rebuild is needed.
+
 The normal release artifact is:
 
 ```text
@@ -51,12 +53,12 @@ Use `-Clean` only when a clean rebuild is needed. Keep `-NoRestore` for normal l
 - Visual Studio with MSBuild, the MSVC `v145` C++ toolset, and the Windows 10 SDK.
 - The Visual Studio "Desktop development with C++" workload supplies the required compiler, resource compiler, linker, Windows headers, Direct2D, DirectWrite, and WRL support.
 - PowerShell and `vswhere.exe`; `build_windows.ps1` uses them to locate and initialize the latest suitable Visual Studio installation.
-- Boost.Lockfree and Boost.CircularBuffer headers for `boost/lockfree/spsc_queue.hpp` and `boost/circular_buffer.hpp`, installed for the `x64-windows` vcpkg triplet.
+- Boost.Lockfree headers for `boost/lockfree/spsc_queue.hpp`, installed for the `x64-windows` vcpkg triplet.
 
 This repository currently uses classic vcpkg integration and does not contain a `vcpkg.json` manifest. Install and integrate Boost before building if it is missing:
 
 ```powershell
-vcpkg install boost-lockfree:x64-windows boost-circular-buffer:x64-windows
+vcpkg install boost-lockfree:x64-windows
 vcpkg integrate install
 ```
 
@@ -70,10 +72,9 @@ vcpkg integrate install
 - Keep the common, Measurement, and Calibration `D2duiSystemRender` queues isolated in the application view layer. Open one frame, draw the common queue and exactly one mode queue, then end the frame; keep reusable rendering components in `D2DUILIB`.
 - Keep local include dependencies acyclic. Component implementations must include their interface and direct dependencies instead of an application umbrella header that includes the component interface; avoid reciprocal includes and back-edges between layers.
 - Never perform blocking dialogs, waits, file/network operations, or thread joins in menu handlers or paint paths.
-- Do not perform or request redraws independently from UI event handlers. Events that change visible UI state, including system paint events, must only set `UiState::redraw_dirty = true`; keep actual rendering centralized in the timer-gated end-of-main-loop path.
-- Keep help windows modeless and route their messages through `ui::preprocess_modeless_dialog_message`.
-- Persist every new user-selectable option in the configuration file. Add its default, parsing, validation, loading, and saving behavior to `config.hpp`, and document the option and configuration format in both language sections of `README.md`.
+- Event handlers may update application/component state, but must schedule redraws only through `UiState::redraw_dirty = true`. Keep actual rendering in `ui::finish_main_loop_iteration`, gated by the main UI timer. Continue input consumption and mouse-analyser ticks independently of whether a frame is drawn.
+- Keep About, Instruction, and custom-setting windows modeless and route their messages through `ui::preprocess_modeless_dialog_message`.
+- Persist new user settings in `config.hpp`, including defaults, parsing, validation, loading, and saving, and document them in both language sections of `README.md`. Recording state, results, hover state, and the current run's Custom menu selection are transient.
 - Treat every documented configuration field as required. Missing, duplicated, or invalid fields invalidate the complete configuration and restore all defaults; unknown fields remain ignored.
-- Calibration Distance presets are `10`, `20`, and `50 cm`; custom input accepts finite decimal centimeters from `10` through `1000`, including `e`/`E` notation, with a 24-character limit. Reference DPI custom input follows the same decimal syntax and length limit within `1` through `999999`. A successful Custom submission keeps Custom checked for that run, while startup maps saved preset values back to their preset commands.
+- Reuse configuration parsers for custom input. A successful custom DPI, calibration-distance, or recording-key submission selects Custom; startup maps saved preset values back to preset commands.
 - Keep resource scripts UTF-8 and retain `#pragma code_page(65001)`.
-- Validate relevant changes with both Debug and Release x64 builds; do not require x86 validation.
