@@ -46,6 +46,29 @@ void add_mouse_dispatch_tests(TestRunner& runner) {
         window.analyser->tick();
         TEST_EXPECT(runner, enters == 1 && repeats == 1);
     });
+    runner.run("hover uses half-open Direct2D rectangles", [&] {
+        MouseTestWindow window;
+        auto p = std::make_shared<Probe>();
+        p->resize({-10.0f, -20.0f, 30.0f, 40.0f}, 1);
+        window.render->register_component(p);
+        int enter = 0, leave = 0;
+        count<Event::MOUSE_HOVER_ENTER>(*p, enter);
+        count<Event::MOUSE_HOVER_LEAVE>(*p, leave);
+        auto hover = [&](short x, short y) { window.message(WM_MOUSEMOVE, 0, MAKELPARAM(x, y)); };
+        hover(-10, -20);
+        hover(0, 0);
+        TEST_EXPECT(runner, enter == 1 && leave == 0);
+        hover(30, 0);
+        TEST_EXPECT(runner, enter == 1 && leave == 1);
+        hover(0, 40);
+        hover(-11, 0);
+        hover(0, -21);
+        hover(31, 0);
+        hover(0, 41);
+        TEST_EXPECT(runner, enter == 1 && leave == 1);
+        hover(29, 39);
+        TEST_EXPECT(runner, enter == 2 && leave == 1);
+    });
     runner.run("all five buttons cancel independently without releases", [&] {
         MouseTestWindow window;
         auto render = window.render;

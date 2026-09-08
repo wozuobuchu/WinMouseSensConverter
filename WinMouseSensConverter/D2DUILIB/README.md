@@ -115,7 +115,7 @@ cl /nologo /std:c++20 /EHsc /utf-8 /DUNICODE /D_UNICODE examples\mouse_events.cp
 
 The automatic-test project compiles this same source with `D2DUI_EXAMPLE_COMPILE_ONLY`, excluding its entry point; it does not run the example or require elevation.
 
-The former renderer `dispatch_mouse_events` / `cancel_mouse_events` methods and public normalized-input types have been removed. Replace stack/value renderer owners with `make_shared`, change their calls to `->`, and pass them to `set_renderers`. Replace application mouse adapters and per-queue input loops with window-message forwarding and `tick()`. Queue changes and forwarded lifecycle messages handle cancellation; the public `set_dpi` method supports explicit host DPI synchronization; there is no public raw dispatch, cancel, or attach/detach API. The unused live-cursor polling helpers have also been removed; `cursor_pos::is_in_rect` remains available for geometry checks.
+The former renderer `dispatch_mouse_events` / `cancel_mouse_events` methods and public normalized-input types have been removed. Replace stack/value renderer owners with `make_shared`, change their calls to `->`, and pass them to `set_renderers`. Replace application mouse adapters and per-queue input loops with window-message forwarding and `tick()`. Queue changes and forwarded lifecycle messages handle cancellation; the public `set_dpi` method supports explicit host DPI synchronization; there is no public raw dispatch, cancel, or attach/detach API. The unused live-cursor polling helpers have also been removed.
 
 ## Resource lifetime
 

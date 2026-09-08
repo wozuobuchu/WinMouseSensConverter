@@ -160,7 +160,6 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClInclude Include="config.hpp" />
-    <ClInclude Include="D2DUILIB\D2DUILIB_INTERFACE\d2dui_cursor_pos.hpp" />
     <ClInclude Include="framework.hpp" />
     <ClInclude Include="Resource.hpp" />
     <ClInclude Include="sync.hpp" />

@@ -180,8 +180,8 @@ namespace mouse_events_example {
 }
 
 #ifndef D2DUI_EXAMPLE_COMPILE_ONLY
-int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int show) {
-    try { return mouse_events_example::run(instance, show); }
+int WINAPI WinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, _In_ LPSTR lpCmdLine, _In_ int nCmdShow) {
+    try { return mouse_events_example::run(hInstance, nCmdShow); }
     catch (...) { return 1; }
 }
 #endif

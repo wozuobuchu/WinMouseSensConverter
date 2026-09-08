@@ -1,7 +1,6 @@
 #pragma once
 
 #include "d2dui_system_render.hpp"
-#include "d2dui_cursor_pos.hpp"
 
 #include <windowsx.h>
 #include <array>
@@ -122,6 +121,11 @@ namespace d2dui {
 
     private:
         enum class Kind { move, leave, down, up, tick };
+
+        static constexpr bool is_in_rect(const D2D1_POINT_2F& position, const D2D1_RECT_F& rect) noexcept {
+            return position.x >= rect.left && position.x < rect.right
+                && position.y >= rect.top && position.y < rect.bottom;
+        }
 
         struct Input {
             Kind kind;
@@ -284,7 +288,7 @@ namespace d2dui {
                     if (epoch != epoch_) return;
                     if (!entry->active) continue;
                     auto& state = pass.group->states[entry];
-                    const bool hovered = inside_ && cursor_pos::is_in_rect(position_, entry->component->get_bounds());
+                    const bool hovered = inside_ && is_in_rect(position_, entry->component->get_bounds());
                     if (hovered != state.hovered) {
                         state.hovered = hovered;
                         emit(entry, hovered ? D2duiMouseEvent::MOUSE_HOVER_ENTER : D2duiMouseEvent::MOUSE_HOVER_LEAVE, 0, hovered ? 1 : 0);
