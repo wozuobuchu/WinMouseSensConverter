@@ -1,5 +1,7 @@
 #include "ui_view.hpp"
 
+#include "sync.hpp"
+
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -102,6 +104,16 @@ namespace ui::view {
         return layout;
     }
 
+    static std::wstring combine_grid_values(d2dui::D2duiLabeledValueGrid& grid) {
+        std::wstring combined;
+        const size_t count = grid.item_count();
+        for (size_t index = 0; index < count; ++index) {
+            if (index != 0) combined.push_back(L'  ');
+            combined += grid.value_component(index).text();
+        }
+        return combined;
+    }
+
     MainView::MainView()
         : status_bar_(std::make_shared<d2dui::D2duiStatusBar>()),
           measurement_header_(std::make_shared<d2dui::D2duiSegmentedHeader>()),
@@ -148,6 +160,22 @@ namespace ui::view {
             [this](const d2dui::D2duiMouseEventParam& param) { calibration_grid_->set_hover(param.position); });
         calibration_grid_->register_mouse_event_handler<MouseEvent::MOUSE_HOVER_LEAVE>(
             [this](const d2dui::D2duiMouseEventParam&) { calibration_grid_->clear_hover(); });
+
+        // A single left click on the status bar toggles the recording switch and the
+        // global recording state. A single left click on a value grid copies the card
+        // values to the clipboard, combining every card when there are several.
+        status_bar_->register_mouse_event_handler<MouseEvent::MOUSE_LEFT_CLICK_LEAVE>(
+            [this](const d2dui::D2duiMouseEventParam&) {
+                status_bar_->set_checked(app_func::toggle_recording());
+            });
+        measurement_grid_->register_mouse_event_handler<MouseEvent::MOUSE_LEFT_CLICK_LEAVE>(
+            [this](const d2dui::D2duiMouseEventParam&) {
+                (void)app_func::copy_text_to_clipboard(combine_grid_values(*measurement_grid_));
+            });
+        calibration_grid_->register_mouse_event_handler<MouseEvent::MOUSE_LEFT_CLICK_LEAVE>(
+            [this](const d2dui::D2duiMouseEventParam&) {
+                (void)app_func::copy_text_to_clipboard(combine_grid_values(*calibration_grid_));
+            });
     }
 
     HRESULT MainView::prepare_resources(d2dui::D2duiContext& context) noexcept {
