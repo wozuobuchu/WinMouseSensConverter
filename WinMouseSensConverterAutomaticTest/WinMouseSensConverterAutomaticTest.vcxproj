@@ -83,6 +83,7 @@
   <ItemGroup>
     <ClInclude Include="test_framework.hpp" />
     <ClInclude Include="test_groups.hpp" />
+    <ClInclude Include="mouse_test_window.hpp" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="config_tests.cpp" />
@@ -90,6 +91,9 @@
     <ClCompile Include="layout_cache_tests.cpp" />
     <ClCompile Include="test_main.cpp" />
     <ClCompile Include="mouse_dispatch_tests.cpp" />
+    <ClCompile Include="..\WinMouseSensConverter\D2DUILIB\examples\mouse_events.cpp">
+      <PreprocessorDefinitions>D2DUI_EXAMPLE_COMPILE_ONLY;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+    </ClCompile>
     <ClCompile Include="ui_input_tests.cpp" />
     <ClCompile Include="..\WinMouseSensConverter\ui_view.cpp">
       <Link>Production\ui_view.cpp</Link>

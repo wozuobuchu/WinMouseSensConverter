@@ -1,5 +1,6 @@
 #include "ui.hpp"
 #include "ui_view.hpp"
+#include "D2DUILIB/D2DUILIB_INTERFACE/d2dui_mouse_event_analyser.hpp"
 
 #include "Resource.hpp"
 
@@ -8,7 +9,6 @@
 #include "sync.hpp"
 
 #include <CommCtrl.h>
-#include <windowsx.h>
 #include <shellapi.h>
 #include <uxtheme.h>
 
@@ -96,9 +96,6 @@ namespace {
         bool in_size_move = false;
         bool minimized = false;
         bool redraw_dirty = true;
-        bool tracking_mouse = false;
-        bool in_menu = false;
-        d2dui::MouseKeyStateBitset mouse_buttons{};
         UINT dpi = USER_DEFAULT_SCREEN_DPI;
         config::UserConfig* user_config = nullptr;
         std::array<wchar_t, 64> recording_key_name{L'F', L'2', L'\0'};
@@ -108,6 +105,7 @@ namespace {
         UINT calibration_distance_command = 0;
         d2dui::D2duiContext d2dui_context;
         ui::view::MainView main_view;
+        std::optional<d2dui::MouseEventAnalyser> mouse_analyser;
 
         ~UiState() {
             if (root_menu != nullptr) DestroyMenu(root_menu);
@@ -334,6 +332,7 @@ namespace {
         return root;
     }
 
+    // Synchronizes view component geometries with current client dimensions in device-independent pixels (DIPs).
     void update_input_layout(UiState& state) noexcept {
         RECT client{};
         if (GetClientRect(state.hwnd, &client)) {
@@ -342,57 +341,12 @@ namespace {
         }
     }
 
-    void cancel_mouse_interaction(UiState& state) noexcept {
-        state.mouse_buttons.reset();
-        if (state.tracking_mouse) {
-            TRACKMOUSEEVENT tracking{sizeof(TRACKMOUSEEVENT), TME_CANCEL | TME_LEAVE, state.hwnd, 0};
-            TrackMouseEvent(&tracking);
-            state.tracking_mouse = false;
-        }
-        if (state.main_view.cancel_mouse_events(app_data::current_mode_)) state.redraw_dirty = true;
-        if (GetCapture() == state.hwnd) ReleaseCapture();
-    }
-
-    void process_window_mouse(UiState& state, UINT message, WPARAM wparam, LPARAM lparam) noexcept {
-        if (state.minimized || state.in_menu || state.in_size_move) return;
-        update_input_layout(state);
-        const float factor = 96.0f / static_cast<float>(state.dpi);
-        d2dui::MouseInput input{
-            d2dui::MouseInputKind::move,
-            {static_cast<float>(GET_X_LPARAM(lparam)) * factor, static_cast<float>(GET_Y_LPARAM(lparam)) * factor}
-        };
-        switch (message) {
-            case WM_LBUTTONDOWN: case WM_LBUTTONDBLCLK: case WM_LBUTTONUP: input.button = VK_LBUTTON; break;
-            case WM_RBUTTONDOWN: case WM_RBUTTONDBLCLK: case WM_RBUTTONUP: input.button = VK_RBUTTON; break;
-            case WM_MBUTTONDOWN: case WM_MBUTTONDBLCLK: case WM_MBUTTONUP: input.button = VK_MBUTTON; break;
-            case WM_XBUTTONDOWN: case WM_XBUTTONDBLCLK: case WM_XBUTTONUP:
-                input.button = GET_XBUTTON_WPARAM(wparam) == XBUTTON1 ? VK_XBUTTON1 : VK_XBUTTON2; break;
-        }
-        if (input.button) {
-            const bool up = message == WM_LBUTTONUP || message == WM_RBUTTONUP || message == WM_MBUTTONUP || message == WM_XBUTTONUP;
-            const size_t index = static_cast<size_t>(input.button) * 3;
-            if (!up && state.mouse_buttons.test(index)) return;
-            state.mouse_buttons.set(index, !up);
-            input.kind = up ? d2dui::MouseInputKind::up : d2dui::MouseInputKind::down;
-            if (!up && GetCapture() != state.hwnd) {
-                SetCapture(state.hwnd);
-                if (GetCapture() != state.hwnd) { cancel_mouse_interaction(state); return; }
-            }
-        }
-        if (!state.tracking_mouse) {
-            TRACKMOUSEEVENT tracking{sizeof(TRACKMOUSEEVENT), TME_LEAVE, state.hwnd, 0};
-            state.tracking_mouse = TrackMouseEvent(&tracking) != FALSE;
-        }
-        if (state.main_view.dispatch_mouse_events(app_data::current_mode_, input)) state.redraw_dirty = true;
-        if (state.mouse_buttons.none() && GetCapture() == state.hwnd) ReleaseCapture();
-    }
-
     // Called by WM_TIMER independently of the redraw gate. Never paints.
-    void process_ui_timer(UiState& state, bool active) noexcept {
+    void process_ui_timer(UiState& state) noexcept {
         if (pull_pending_input(state)) state.redraw_dirty = true;
-        if (!state.minimized && !state.in_size_move && !state.in_menu && active) {
+        if (state.mouse_analyser) {
             update_input_layout(state);
-            if (state.main_view.dispatch_mouse_events(app_data::current_mode_, {d2dui::MouseInputKind::tick})) state.redraw_dirty = true;
+            if (state.mouse_analyser->tick()) state.redraw_dirty = true;
         }
     }
 
@@ -775,8 +729,14 @@ namespace {
                 const auto previous_mode = app_data::current_mode_;
                 app_data::current_mode_ = mode;
                 update_input_layout(state);
-                (void)state.main_view.cancel_mouse_events(previous_mode, false);
-                state.user_config->mode = mode;
+                try {
+                    state.mouse_analyser->set_renderers({state.main_view.common_render(),
+                        mode == config::AppMode::calibration ? state.main_view.calibration_render() : state.main_view.measurement_render()});
+                } catch (...) {
+                    app_data::current_mode_ = previous_mode;
+                    return true;
+                }
+                state.user_config->mode = app_data::current_mode_;
                 update_menu_selection(state);
                 state.redraw_dirty = true;
             }
@@ -880,7 +840,22 @@ namespace {
             state->hwnd = hwnd;
             state->dpi = GetDpiForWindow(hwnd);
             if (state->dpi == 0) state->dpi = USER_DEFAULT_SCREEN_DPI;
+            try {
+                state->mouse_analyser.emplace(hwnd, state->dpi);
+                state->mouse_analyser->set_renderers({state->main_view.common_render(),
+                    app_data::current_mode_ == config::AppMode::calibration ? state->main_view.calibration_render() : state->main_view.measurement_render()});
+            } catch (...) {
+                return FALSE;
+            }
             SetWindowLongPtrW(hwnd, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(state));
+        }
+
+        if (state != nullptr && state->mouse_analyser) {
+            // Layout belongs to the application; input analysis never opens a frame.
+            if (message >= WM_MOUSEFIRST && message <= WM_MOUSELAST) update_input_layout(*state);
+            const auto input_result = state->mouse_analyser->process_window_message(message, wparam, lparam);
+            if (input_result.callbacks_invoked) state->redraw_dirty = true;
+            if (input_result.consumed) return input_result.result;
         }
 
         switch (message) {
@@ -896,38 +871,7 @@ namespace {
                 set_minimum_tracking_size(hwnd, *reinterpret_cast<MINMAXINFO*>(lparam));
                 return 0;
 
-            case WM_MOUSEMOVE:
-            case WM_LBUTTONDOWN: case WM_LBUTTONDBLCLK: case WM_LBUTTONUP:
-            case WM_RBUTTONDOWN: case WM_RBUTTONDBLCLK: case WM_RBUTTONUP:
-            case WM_MBUTTONDOWN: case WM_MBUTTONDBLCLK: case WM_MBUTTONUP:
-            case WM_XBUTTONDOWN: case WM_XBUTTONDBLCLK: case WM_XBUTTONUP:
-                if (state != nullptr && GetActiveWindow() == hwnd) process_window_mouse(*state, message, wparam, lparam);
-                return message == WM_XBUTTONDOWN || message == WM_XBUTTONDBLCLK || message == WM_XBUTTONUP ? TRUE : 0;
-
-            case WM_MOUSELEAVE:
-                if (state != nullptr) {
-                    state->tracking_mouse = false;
-                    if (state->main_view.dispatch_mouse_events(app_data::current_mode_, {d2dui::MouseInputKind::leave})) state->redraw_dirty = true;
-                }
-                return 0;
-            case WM_CAPTURECHANGED:
-                if (state != nullptr && reinterpret_cast<HWND>(lparam) != hwnd && state->mouse_buttons.any()) cancel_mouse_interaction(*state);
-                return 0;
-            case WM_CANCELMODE:
-                if (state != nullptr) cancel_mouse_interaction(*state);
-                break;
-            case WM_ACTIVATE:
-                if (state != nullptr && LOWORD(wparam) == WA_INACTIVE) cancel_mouse_interaction(*state);
-                break;
-            case WM_ENTERMENULOOP:
-                if (state != nullptr) { state->in_menu = true; cancel_mouse_interaction(*state); }
-                return 0;
-            case WM_EXITMENULOOP:
-                if (state != nullptr) state->in_menu = false;
-                return 0;
-
             case WM_ENTERSIZEMOVE:
-                if (state != nullptr) cancel_mouse_interaction(*state);
                 if (state != nullptr) state->in_size_move = true;
                 return 0;
 
@@ -941,7 +885,6 @@ namespace {
             case WM_SIZE:
                 if (state != nullptr) {
                     state->minimized = wparam == SIZE_MINIMIZED;
-                    if (state->minimized) cancel_mouse_interaction(*state);
                     update_input_layout(*state);
                     state->redraw_dirty = true;
                 }
@@ -964,7 +907,7 @@ namespace {
 
             case WM_TIMER:
                 if (wparam == kUiTimer) {
-                    if (state != nullptr) process_ui_timer(*state, GetActiveWindow() == hwnd);
+                    if (state != nullptr) process_ui_timer(*state);
                     return 0;
                 }
                 break;

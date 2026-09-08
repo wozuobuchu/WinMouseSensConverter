@@ -175,6 +175,7 @@
     <ClInclude Include="D2DUILIB\D2DUILIB_INTERFACE\d2dui.hpp" />
     <ClInclude Include="D2DUILIB\D2DUILIB_INTERFACE\d2dui_component_base.hpp" />
     <ClInclude Include="D2DUILIB\D2DUILIB_INTERFACE\d2dui_system_render.hpp" />
+    <ClInclude Include="D2DUILIB\D2DUILIB_INTERFACE\d2dui_mouse_event_analyser.hpp" />
     <ClInclude Include="D2DUILIB\D2DUILIB_COMPONENT\d2dui_labeled_value_grid.hpp" />
     <ClInclude Include="D2DUILIB\D2DUILIB_COMPONENT\d2dui_line.hpp" />
     <ClInclude Include="D2DUILIB\D2DUILIB_COMPONENT\d2dui_panel.hpp" />
@@ -204,6 +205,7 @@
     <None Include="..\AGENTS.md" />
     <None Include="..\README.md" />
     <None Include="D2DUILIB\README.md" />
+    <None Include="D2DUILIB\examples\mouse_events.cpp" />
   </ItemGroup>
   <ItemGroup>
     <Text Include="..\LICENSE.txt" />

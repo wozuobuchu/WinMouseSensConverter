@@ -3,9 +3,10 @@
 #ifndef D2DUI_COMPONENT_BASE_HPP_
 #define D2DUI_COMPONENT_BASE_HPP_
 
+#include "d2dui.hpp"
+
 #include <Windows.h>
 
-#include <bitset>
 #include <concepts>
 #include <cstdint>
 #include <functional>
@@ -13,7 +14,6 @@
 #include <unordered_map>
 #include <utility>
 
-#include "d2dui.hpp"
 
 namespace d2dui {
 
@@ -52,8 +52,6 @@ namespace d2dui {
         MOUSE_CANCEL, // Interaction aborted; never commit a click on cancellation.
         SIZE
     };
-
-    using MouseKeyStateBitset = std::bitset<static_cast<size_t>(D2duiMouseEvent::SIZE)>; // 0: up, 1: down
 
     template <D2duiMouseEvent Event>
     concept ValidD2duiMouseEvent =

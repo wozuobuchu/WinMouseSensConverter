@@ -15,6 +15,7 @@
     <ClInclude Include="test_framework.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="mouse_test_window.hpp"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="test_groups.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
@@ -29,6 +30,7 @@
     <ClCompile Include="layout_cache_tests.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="..\WinMouseSensConverter\D2DUILIB\examples\mouse_events.cpp"><Filter>Production</Filter></ClCompile>
     <ClCompile Include="mouse_dispatch_tests.cpp"><Filter>Source Files</Filter></ClCompile>
     <ClCompile Include="ui_input_tests.cpp"><Filter>Source Files</Filter></ClCompile>
     <ClCompile Include="test_main.cpp">

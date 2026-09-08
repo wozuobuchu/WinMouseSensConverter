@@ -108,11 +108,11 @@ namespace ui::view {
           measurement_grid_(std::make_shared<d2dui::D2duiLabeledValueGrid>()),
           calibration_header_(std::make_shared<d2dui::D2duiSegmentedHeader>()),
           calibration_grid_(std::make_shared<d2dui::D2duiLabeledValueGrid>()) {
-        common_render_.register_component(status_bar_);
-        measurement_render_.register_component(measurement_header_);
-        measurement_render_.register_component(measurement_grid_);
-        calibration_render_.register_component(calibration_header_);
-        calibration_render_.register_component(calibration_grid_);
+        common_render_->register_component(status_bar_);
+        measurement_render_->register_component(measurement_header_);
+        measurement_render_->register_component(measurement_grid_);
+        calibration_render_->register_component(calibration_header_);
+        calibration_render_->register_component(calibration_grid_);
         measurement_header_->set_leading_text(L"Measurement");
         measurement_header_->set_cells({L"REFDPI 800", L"UNIT cm"});
         measurement_grid_->set_items({
@@ -208,50 +208,6 @@ namespace ui::view {
         calibration_grid_->resize(layout.data_bounds, layout.scale);
     }
 
-    bool MainView::dispatch_mouse_events(config::AppMode mode, d2dui::MouseInput input) noexcept {
-        if (input.kind == d2dui::MouseInputKind::cancel) return cancel_mouse_events(mode);
-        // Serialize across BOTH queues as well as within each renderer.
-        if (dispatching_mouse_) {
-            try { pending_mouse_inputs_.push_back({mode, input}); }
-            catch (...) { return cancel_mouse_events(mode); }
-            return false;
-        }
-        dispatching_mouse_ = true;
-        bool handled = false;
-        for (;;) {
-            const auto epoch = interaction_epoch_;
-            handled = common_render_.dispatch_mouse_events(input) || handled;
-            if (epoch == interaction_epoch_) {
-                auto& render = mode == config::AppMode::calibration ? calibration_render_ : measurement_render_;
-                handled = render.dispatch_mouse_events(input) || handled;
-            }
-            if (pending_mouse_inputs_.empty()) break;
-            const auto next = pending_mouse_inputs_.front();
-            pending_mouse_inputs_.pop_front();
-            mode = next.mode;
-            input = next.input;
-        }
-        dispatching_mouse_ = false;
-        return handled;
-    }
-
-    bool MainView::cancel_mouse_events(config::AppMode mode, bool include_common) noexcept {
-        const bool was_dispatching = dispatching_mouse_;
-        dispatching_mouse_ = true;
-        ++interaction_epoch_;
-        pending_mouse_inputs_.clear();
-        auto& render = mode == config::AppMode::calibration ? calibration_render_ : measurement_render_;
-        bool handled = render.cancel_mouse_events();
-        if (include_common) handled = common_render_.cancel_mouse_events() || handled;
-        dispatching_mouse_ = was_dispatching;
-        if (!was_dispatching && !pending_mouse_inputs_.empty()) {
-            const auto next = pending_mouse_inputs_.front();
-            pending_mouse_inputs_.pop_front();
-            handled = dispatch_mouse_events(next.mode, next.input) || handled;
-        }
-        return handled;
-    }
-
     HRESULT MainView::render(d2dui::D2duiContext& context, const ViewSnapshot& snapshot) noexcept {
         const HRESULT begin_result = context.begin_frame({0xF4F7FB, 1.0f});
         if (begin_result != S_OK) return begin_result;
@@ -270,11 +226,11 @@ namespace ui::view {
                         ? update_calibration(snapshot)
                         : update_measurement(snapshot);
                 }
-                if (SUCCEEDED(content_result)) content_result = common_render_.draw(context);
+                if (SUCCEEDED(content_result)) content_result = common_render_->draw(context);
                 if (SUCCEEDED(content_result)) {
                     content_result = snapshot.mode == config::AppMode::calibration
-                        ? calibration_render_.draw(context)
-                        : measurement_render_.draw(context);
+                        ? calibration_render_->draw(context)
+                        : measurement_render_->draw(context);
                 }
             }
         } catch (const std::bad_alloc&) {

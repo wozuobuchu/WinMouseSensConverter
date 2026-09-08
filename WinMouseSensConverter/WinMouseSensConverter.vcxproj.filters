@@ -25,6 +25,9 @@
     <Filter Include="头文件\D2DUILIB\D2DUILIB_COMPONENT">
       <UniqueIdentifier>{F4C7C071-FC78-4692-A61A-EF09BF2B218C}</UniqueIdentifier>
     </Filter>
+    <Filter Include="头文件\D2DUILIB\EXAMPLES">
+      <UniqueIdentifier>{3e994006-fd12-4bc3-a049-37a7a27b37d3}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="config.hpp">
@@ -49,6 +52,9 @@
       <Filter>头文件\D2DUILIB\D2DUILIB_INTERFACE</Filter>
     </ClInclude>
     <ClInclude Include="D2DUILIB\D2DUILIB_INTERFACE\d2dui_component_base.hpp">
+      <Filter>头文件\D2DUILIB\D2DUILIB_INTERFACE</Filter>
+    </ClInclude>
+    <ClInclude Include="D2DUILIB\D2DUILIB_INTERFACE\d2dui_mouse_event_analyser.hpp">
       <Filter>头文件\D2DUILIB\D2DUILIB_INTERFACE</Filter>
     </ClInclude>
     <ClInclude Include="D2DUILIB\D2DUILIB_INTERFACE\d2dui_system_render.hpp">
@@ -141,6 +147,9 @@
     </None>
     <None Include="D2DUILIB\README.md">
       <Filter>头文件\D2DUILIB</Filter>
+    </None>
+    <None Include="D2DUILIB\examples\mouse_events.cpp">
+      <Filter>头文件\D2DUILIB\EXAMPLES</Filter>
     </None>
   </ItemGroup>
   <ItemGroup>

@@ -11,7 +11,6 @@
 #include "D2DUILIB/D2DUILIB_INTERFACE/d2dui_system_render.hpp"
 
 #include <cstddef>
-#include <deque>
 #include <memory>
 #include <string_view>
 
@@ -56,39 +55,29 @@ namespace ui::view {
         HRESULT prepare_resources(d2dui::D2duiContext& context) noexcept;
         HRESULT render(d2dui::D2duiContext& context, const ViewSnapshot& snapshot) noexcept;
 
-        [[nodiscard]] d2dui::D2duiSystemRender& common_render() noexcept { return common_render_; }
-        [[nodiscard]] d2dui::D2duiSystemRender& measurement_render() noexcept { return measurement_render_; }
-        [[nodiscard]] d2dui::D2duiSystemRender& calibration_render() noexcept { return calibration_render_; }
+        [[nodiscard]] std::shared_ptr<d2dui::D2duiSystemRender> common_render() noexcept { return common_render_; }
+        [[nodiscard]] std::shared_ptr<d2dui::D2duiSystemRender> measurement_render() noexcept { return measurement_render_; }
+        [[nodiscard]] std::shared_ptr<d2dui::D2duiSystemRender> calibration_render() noexcept { return calibration_render_; }
         [[nodiscard]] d2dui::D2duiLabeledValueGrid& measurement_grid() noexcept { return *measurement_grid_; }
         [[nodiscard]] d2dui::D2duiLabeledValueGrid& calibration_grid() noexcept { return *calibration_grid_; }
 
         // Input layout and callbacks do not open a render frame. Dimensions are DIPs.
         void update_layout(float width, float height) noexcept;
-        bool dispatch_mouse_events(config::AppMode mode, d2dui::MouseInput input) noexcept;
-        // Mode changes cancel only the outgoing mode; window cancellation includes common.
-        bool cancel_mouse_events(config::AppMode mode, bool include_common = true) noexcept;
 
     private:
         HRESULT update_common(const ViewSnapshot& snapshot);
         HRESULT update_measurement(const ViewSnapshot& snapshot);
         HRESULT update_calibration(const ViewSnapshot& snapshot);
 
-        d2dui::D2duiSystemRender common_render_;
-        d2dui::D2duiSystemRender measurement_render_;
-        d2dui::D2duiSystemRender calibration_render_;
+        std::shared_ptr<d2dui::D2duiSystemRender> common_render_ = std::make_shared<d2dui::D2duiSystemRender>();
+        std::shared_ptr<d2dui::D2duiSystemRender> measurement_render_ = std::make_shared<d2dui::D2duiSystemRender>();
+        std::shared_ptr<d2dui::D2duiSystemRender> calibration_render_ = std::make_shared<d2dui::D2duiSystemRender>();
 
         std::shared_ptr<d2dui::D2duiStatusBar> status_bar_;
         std::shared_ptr<d2dui::D2duiSegmentedHeader> measurement_header_;
         std::shared_ptr<d2dui::D2duiLabeledValueGrid> measurement_grid_;
         std::shared_ptr<d2dui::D2duiSegmentedHeader> calibration_header_;
         std::shared_ptr<d2dui::D2duiLabeledValueGrid> calibration_grid_;
-        struct PendingMouseInput {
-            config::AppMode mode;
-            d2dui::MouseInput input;
-        };
-        std::deque<PendingMouseInput> pending_mouse_inputs_;
-        bool dispatching_mouse_ = false;
-        size_t interaction_epoch_ = 0;
     };
 
 } // namespace ui::view
