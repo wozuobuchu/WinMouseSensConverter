@@ -263,11 +263,6 @@ namespace config {
             return parsed;
         }
 
-        inline bool parses_as(std::string_view text, double reference_dpi, OutputUnit unit, double calibration_distance_cm, AppMode mode, uint16_t recording_key) noexcept {
-            const std::optional<UserConfig> parsed = parse_configuration(text);
-            return parsed.has_value() && parsed->reference_dpi == reference_dpi && parsed->unit == unit && parsed->calibration_distance_cm == calibration_distance_cm && parsed->mode == mode && parsed->recording_key == recording_key;
-        }
-
         inline std::optional<std::filesystem::path> config_directory() noexcept {
             PWSTR local_app_data = nullptr;
             if (FAILED(SHGetKnownFolderPath(FOLDERID_LocalAppData, KF_FLAG_DEFAULT, nullptr, &local_app_data))) {
@@ -318,7 +313,13 @@ namespace config {
         }
 
         inline bool valid(const UserConfig& user_config) noexcept {
-            return std::isfinite(user_config.reference_dpi) && user_config.reference_dpi >= 1.0 && user_config.reference_dpi <= 999999.0 && !unit_name(user_config.unit).empty() && std::isfinite(user_config.calibration_distance_cm) && user_config.calibration_distance_cm >= 10.0 && user_config.calibration_distance_cm <= 1000.0 && !mode_name(user_config.mode).empty() && user_config.recording_key >= 1 && user_config.recording_key <= 254;
+            return
+                std::isfinite(user_config.reference_dpi) &&
+                user_config.reference_dpi >= 1.0 && user_config.reference_dpi <= 999999.0 && 
+                !unit_name(user_config.unit).empty() && std::isfinite(user_config.calibration_distance_cm) && 
+                user_config.calibration_distance_cm >= 10.0 && user_config.calibration_distance_cm <= 1000.0 && 
+                !mode_name(user_config.mode).empty() && 
+                user_config.recording_key >= 1 && user_config.recording_key <= 254;
         }
 
         inline std::optional<std::string> format_floating_point(double value) noexcept {
