@@ -343,26 +343,23 @@ namespace rawinput {
 
     class LowLatencyInputLifetimeGuard final {
     public:
-        // Start automatically during static initialization.
-        LowLatencyInputLifetimeGuard() noexcept {
-            static bool init = []() -> bool {
-                (void)LowLatencyInput::start_message_thread();
-                return true;
-            }();
-            (void)init;
-        }
+        // The application entry point owns the one-shot input lifetime.
+        LowLatencyInputLifetimeGuard() noexcept
+            : started_(LowLatencyInput::start_message_thread()) {}
+
+        LowLatencyInputLifetimeGuard(const LowLatencyInputLifetimeGuard&) = delete;
+        LowLatencyInputLifetimeGuard& operator=(const LowLatencyInputLifetimeGuard&) = delete;
+
+        [[nodiscard]] bool started() const noexcept { return started_; }
 
         // Stop automatically before static thread storage is destroyed.
         ~LowLatencyInputLifetimeGuard() {
-            static bool stop = []() -> bool {
-                (void)LowLatencyInput::stop_message_thread();
-                return true;
-            }();
-            (void)stop;
+            (void)LowLatencyInput::stop_message_thread();
         }
-    };
 
-    inline LowLatencyInputLifetimeGuard input_lifetime_guard;
+    private:
+        const bool started_;
+    };
 
 } // namespace rawinput
 

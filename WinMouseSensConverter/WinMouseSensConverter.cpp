@@ -1,6 +1,7 @@
 #include "config.hpp"
 #include "sync.hpp"
 #include "ui.hpp"
+#include "SYS/low_latency_input.hpp"
 
 #include <CommCtrl.h>
 
@@ -9,6 +10,9 @@ namespace runtime {
     inline static int run_app(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, _In_ LPSTR lpCmdLine, _In_ int nCmdShow) {
         (void)hPrevInstance;
         (void)lpCmdLine;
+
+        const rawinput::LowLatencyInputLifetimeGuard input_lifetime_guard;
+        if (!input_lifetime_guard.started()) return 1;
 
         INITCOMMONCONTROLSEX common_controls{};
         common_controls.dwSize = sizeof(common_controls);

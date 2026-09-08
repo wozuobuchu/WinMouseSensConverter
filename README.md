@@ -343,7 +343,7 @@ The program has two principal execution contexts:
 1. **Combined Raw Input thread** — owns one message-only window registered for keyboard and mouse input, drains relative movement into a packed atomic accumulator, and produces normalized, deduplicated keyboard and mouse-button transitions for one SPSC consumer.
 2. **Main/UI thread** — handles window and modeless-dialog messages, consumes key events then mouse movement on an approximately 8 ms timer, updates shared state, and renders exactly one mode.
 
-The input thread starts once during static initialization. A promise/future handshake completes only after keyboard and mouse Raw Input registration succeeds or reports failure. Shutdown posts `WM_QUIT`, joins the thread, unregisters both Raw Input devices, and destroys the message-only window. Menu and paint paths do not perform input-thread joins or other blocking work.
+The application entry point explicitly starts the input thread once, before loading configuration or creating the main window. A promise/future handshake completes only after keyboard and mouse Raw Input registration succeeds or reports failure. If initialization fails, the application exits silently with code `1`, without reading or writing configuration or retrying. The entry point owns the input lifetime; shutdown posts `WM_QUIT`, joins the thread, unregisters both Raw Input devices, and destroys the message-only window. Menu and paint paths do not perform input-thread joins or other blocking work.
 
 #### Buffered input and concurrency
 
@@ -784,7 +784,7 @@ flowchart LR
 1. **合并后的 Raw Input 线程**——拥有一个同时注册键盘和鼠标输入的 message-only window，把相对位移排入打包原子累加器，并为唯一 SPSC 消费者生成归一化且去重的键盘与鼠标按键状态变化。
 2. **主/UI 线程**——处理窗口和非模态窗口消息，在约 8 ms 定时器上依次消费按键事件和鼠标移动，更新共享状态并只渲染一个模式。
 
-输入线程在静态初始化阶段启动一次。promise/future 握手只在键盘和鼠标 Raw Input 注册成功或明确失败后完成。退出时发送 `WM_QUIT`、回收线程、注销两个 Raw Input 设备并销毁 message-only window。菜单和绘制路径不会执行输入线程 `join` 或其他阻塞工作。
+应用入口在加载配置和创建主窗口之前显式启动一次输入线程。promise/future 握手只在键盘和鼠标 Raw Input 注册成功或明确失败后完成。初始化失败时，程序不显示提示，直接以退出码 `1` 退出，不读写配置，也不重试。应用入口管理输入生命周期；退出时发送 `WM_QUIT`、回收线程、注销两个 Raw Input 设备并销毁 message-only window。菜单和绘制路径不会执行输入线程 `join` 或其他阻塞工作。
 
 #### 批量输入与并发
 

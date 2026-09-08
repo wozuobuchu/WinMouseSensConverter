@@ -277,6 +277,7 @@ namespace config {
             try {
                 std::filesystem::path directory(local_app_data);
                 CoTaskMemFree(local_app_data);
+                local_app_data = nullptr;
                 directory /= kApplicationDirectoryName;
                 return directory;
             } catch (...) {
