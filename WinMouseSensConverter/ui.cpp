@@ -1070,13 +1070,15 @@ namespace ui {
     }
 
     void finish_main_loop_iteration(HWND main_window, const MSG& message) noexcept {
+        const bool redraw_tick = message.hwnd == main_window && message.message == WM_TIMER && message.wParam == kUiTimer;
+        if (!redraw_tick) return;
+
         if (main_window == nullptr || !IsWindow(main_window)) return;
 
         UiState* state = reinterpret_cast<UiState*>(GetWindowLongPtrW(main_window, GWLP_USERDATA));
         if (state == nullptr) return;
 
-        const bool redraw_tick = message.hwnd == main_window && message.message == WM_TIMER && message.wParam == kUiTimer;
-        if (!redraw_tick || !state->redraw_dirty || state->in_size_move || state->minimized) return;
+        if (!state->redraw_dirty || state->in_size_move || state->minimized) return;
 
         if (paint_window(*state)) state->redraw_dirty = false;
     }
