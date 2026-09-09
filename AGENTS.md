@@ -13,8 +13,8 @@ Key behavior:
 - Calibration mode uses `hypot(dx, dy)` and `calibrated_dpi = counts / (calibration_distance_cm / 2.54)`. Unit controls the `CALDIS` ruler-distance display; Reference DPI supplies its raw-count equivalent. Neither affects calibrated DPI.
 - Switching modes preserves the active recording and accumulated X/Y values.
 - Defaults, presets, input ranges, and the configuration format are documented in `README.md`; keep both language sections consistent with `config.hpp` and `ui.cpp`.
-- Keyboard events, mouse-button events, and mouse movement are collected by one dedicated Raw Input message thread. The main UI thread consumes the SPSC key-event queue and packed movement snapshots, then renders with Direct2D and DirectWrite.
-- Input startup is explicit and owned by the entry-point lifetime guard. Registration failure exits with code `1` before configuration I/O or window creation; do not introduce input-thread startup as an include side effect.
+- Keyboard events, mouse-button events, and mouse movement are collected by one dedicated Raw Input message thread. Relative movement is accumulated locally across all buffer reads in a tick and published with one successful CAS at the next loop entry, before the 1 ms wait; WM_QUIT discards the final unpublished batch. The main UI thread consumes the SPSC key-event queue and published packed movement snapshots, then renders with Direct2D and DirectWrite.
+- Input startup is explicit and owned by the entry-point lifetime guard. Registration failure exits with code `1` before configuration I/O or window creation; do not introduce input-thread startup as an include side effect. The retained mouse-only and keyboard-only headers likewise require an explicitly constructed, non-copyable lifetime guard with a `started()` status check.
 - The executable manifest requires administrator privileges at startup.
 
 ## Build policy

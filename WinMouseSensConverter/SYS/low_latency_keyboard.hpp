@@ -9,6 +9,7 @@
 #include <cstdint>
 #include <future>
 #include <thread>
+#include <utility>
 
 #include <boost/lockfree/spsc_queue.hpp>
 
@@ -272,26 +273,23 @@ namespace rawinput {
 
     class LowLatencyKeyboardLifetimeGuard final {
     public:
-        // Start automatically during static initialization.
-        LowLatencyKeyboardLifetimeGuard() noexcept {
-            static bool init = []() -> bool {
-                (void)LowLatencyKeyboard::start_message_thread();
-                return true;
-            }();
-            (void)init;
-        }
+        // The application entry point owns the one-shot input lifetime.
+        LowLatencyKeyboardLifetimeGuard() noexcept
+            : started_(LowLatencyKeyboard::start_message_thread()) {}
+
+        LowLatencyKeyboardLifetimeGuard(const LowLatencyKeyboardLifetimeGuard&) = delete;
+        LowLatencyKeyboardLifetimeGuard& operator=(const LowLatencyKeyboardLifetimeGuard&) = delete;
+
+        [[nodiscard]] bool started() const noexcept { return started_; }
 
         // Stop automatically before static thread storage is destroyed.
         ~LowLatencyKeyboardLifetimeGuard() {
-            static bool stop = []() -> bool {
-                (void)LowLatencyKeyboard::stop_message_thread();
-                return true;
-            }();
-            (void)stop;
+            (void)LowLatencyKeyboard::stop_message_thread();
         }
-    };
 
-    inline LowLatencyKeyboardLifetimeGuard keyboard_lifetime_guard;
+    private:
+        const bool started_;
+    };
 
 } // namespace rawinput
 

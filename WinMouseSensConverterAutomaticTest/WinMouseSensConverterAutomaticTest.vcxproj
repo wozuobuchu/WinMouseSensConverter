@@ -57,7 +57,6 @@
       <LanguageStandard_C>stdc17</LanguageStandard_C>
       <AdditionalIncludeDirectories>$(ProjectDir)..\WinMouseSensConverter;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <AdditionalOptions>/utf-8 %(AdditionalOptions)</AdditionalOptions>
-      <PreprocessorDefinitions>WINMOUSESENSCONVERTER_AUTOMATIC_TEST;%(PreprocessorDefinitions)</PreprocessorDefinitions>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
@@ -86,6 +85,7 @@
     <ClInclude Include="mouse_test_window.hpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="input_batch_tests.cpp" />
     <ClCompile Include="config_tests.cpp" />
     <ClCompile Include="core_logic_tests.cpp" />
     <ClCompile Include="layout_cache_tests.cpp" />

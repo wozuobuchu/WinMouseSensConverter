@@ -30,6 +30,35 @@ namespace rawinput {
     private:
         friend class LowLatencyMouseMovLifetimeGuard;
 
+        friend struct InputBatchTestAccess;
+
+        // Owned by the message thread, spanning every buffer read in one tick.
+        struct MovementBatch {
+            uint32_t x = 0;
+            uint32_t y = 0;
+        };
+
+        template <typename MovementAtomic>
+        inline static void publish_movement_to(MovementBatch& pending, MovementAtomic& movement) noexcept {
+            if (pending.x == 0 && pending.y == 0) return;
+
+            uint64_t expected = movement.load(std::memory_order_relaxed);
+            while (true) {
+                // Add axes separately so modulo-2^32 wrap never carries into Y.
+                const uint32_t new_x = static_cast<uint32_t>(expected) + pending.x;
+                const uint32_t new_y = static_cast<uint32_t>(expected >> 32) + pending.y;
+                const uint64_t desired = static_cast<uint64_t>(new_x) | (static_cast<uint64_t>(new_y) << 32);
+                if (movement.compare_exchange_weak(expected, desired, std::memory_order_relaxed, std::memory_order_relaxed)) {
+                    pending = {};
+                    return;
+                }
+            }
+        }
+
+        inline static void publish_movement(MovementBatch& pending) noexcept {
+            publish_movement_to(pending, packed_movement_);
+        }
+
         inline static constexpr size_t kRawInputBatchCapacity = 64;
         inline static constexpr DWORD kRawInputBatchIntervalMs = 1;
         inline static constexpr DWORD kMessageLoopRetryDelayMs = 1;
@@ -81,23 +110,7 @@ namespace rawinput {
             return stop;
         }
 
-        inline static void process_raw_input(const RAWINPUT& raw_input) noexcept {
-
-            constexpr auto cas_mov = [](int32_t delta_x, int32_t delta_y) noexcept -> void {
-                uint64_t expected = packed_movement_.load(std::memory_order_relaxed);
-
-                while (true) {
-                    const uint32_t old_x = static_cast<uint32_t>(expected);
-                    const uint32_t old_y = static_cast<uint32_t>(expected >> 32);
-                    const uint32_t new_x = old_x + static_cast<uint32_t>(delta_x);
-                    const uint32_t new_y = old_y + static_cast<uint32_t>(delta_y);
-                    const uint64_t desired = static_cast<uint64_t>(new_x) | (static_cast<uint64_t>(new_y) << 32);
-
-                    if (packed_movement_.compare_exchange_weak(expected, desired, std::memory_order_relaxed, std::memory_order_relaxed)) {
-                        return;
-                    }
-                }
-            };
+        inline static void process_raw_input(const RAWINPUT& raw_input, MovementBatch& pending) noexcept {
 
             if (raw_input.header.dwType != RIM_TYPEMOUSE) return;
 
@@ -105,16 +118,19 @@ namespace rawinput {
             if ((mouse.usFlags & MOUSE_MOVE_ABSOLUTE) != 0) return;
             if (mouse.lLastX == 0 && mouse.lLastY == 0) return;
 
-            cas_mov(static_cast<int32_t>(mouse.lLastX), static_cast<int32_t>(mouse.lLastY));
+            pending.x += static_cast<uint32_t>(mouse.lLastX);
+            pending.y += static_cast<uint32_t>(mouse.lLastY);
         }
 
         // Drain all queued mouse packets into a fixed-size aligned buffer.
-        inline static bool drain_raw_input_buffer(std::array<RAWINPUT, kRawInputBatchCapacity>& buffer) noexcept {
+        template <typename ReadBuffer>
+        inline static bool drain_raw_input_buffer(std::array<RAWINPUT, kRawInputBatchCapacity>& buffer,
+            MovementBatch& pending, ReadBuffer& read_buffer) noexcept {
             using QWORD = ULONGLONG; // Required by the x64 RAWINPUT_ALIGN macro.
 
             while (true) {
                 UINT buffer_size = static_cast<UINT>(sizeof(buffer));
-                const UINT input_count = GetRawInputBuffer(
+                const UINT input_count = read_buffer(
                     buffer.data(),
                     &buffer_size,
                     sizeof(RAWINPUTHEADER)
@@ -125,12 +141,53 @@ namespace rawinput {
 
                 PRAWINPUT current = buffer.data();
                 for (UINT index = 0; index < input_count; ++index) {
-                    process_raw_input(*current);
+                    process_raw_input(*current, pending);
                     current = NEXTRAWINPUTBLOCK(current);
                 }
             }
 
             return false;
+        }
+
+        // Defaults read Win32 input and publish to the shared movement accumulator.
+        template <typename ReadBuffer = decltype(&GetRawInputBuffer), typename PublishMovement = decltype(&publish_movement)>
+        inline static void run_message_loop(ReadBuffer read_buffer = &GetRawInputBuffer,
+            PublishMovement publish = &publish_movement) noexcept {
+            alignas(8) std::array<RAWINPUT, kRawInputBatchCapacity> buffer{};
+            MovementBatch pending{};
+            MSG message{};
+            bool running = true;
+
+            while (running) {
+                // Publish the previous tick before waiting; never publish from packet processing.
+                publish(pending);
+                // Exclude Raw Input from the wake mask so high-rate reports accumulate until the 1 ms timeout.
+                const DWORD wait_result = MsgWaitForMultipleObjectsEx(
+                    0,
+                    nullptr,
+                    kRawInputBatchIntervalMs,
+                    kControlWakeMask,
+                    MWMO_INPUTAVAILABLE
+                );
+                bool retry_needed = wait_result == WAIT_FAILED;
+                if (!retry_needed && !drain_raw_input_buffer(buffer, pending, read_buffer)) {
+                    retry_needed = true;
+                }
+
+                // Leave WM_INPUT for the buffered API and dispatch control messages.
+                while (PeekMessageW(&message, nullptr, 0, WM_INPUT - 1, PM_REMOVE) || PeekMessageW(&message, nullptr, WM_INPUT + 1, 0xFFFF, PM_REMOVE)) {
+                    if (message.message == WM_QUIT) {
+                        running = false;
+                        break;
+                    }
+                    DispatchMessageW(&message);
+                }
+
+                if (retry_needed && running) {
+                    Sleep(kMessageLoopRetryDelayMs);
+                }
+            }
+            // WM_QUIT deliberately discards the final unpublished local batch.
         }
 
         inline static void message_thread_proc(std::promise<bool> ready) noexcept {
@@ -181,37 +238,7 @@ namespace rawinput {
             message_thread_id_.store(GetCurrentThreadId(), std::memory_order_release);
             ready.set_value(true);
 
-            alignas(8) std::array<RAWINPUT, kRawInputBatchCapacity> buffer{};
-            MSG message{};
-            bool running = true;
-
-            while (running) {
-                // Exclude Raw Input from the wake mask so high-rate reports accumulate until the 1 ms timeout.
-                const DWORD wait_result = MsgWaitForMultipleObjectsEx(
-                    0,
-                    nullptr,
-                    kRawInputBatchIntervalMs,
-                    kControlWakeMask,
-                    MWMO_INPUTAVAILABLE
-                );
-                bool retry_needed = wait_result == WAIT_FAILED;
-                if (!retry_needed && !drain_raw_input_buffer(buffer)) {
-                    retry_needed = true;
-                }
-
-                // Leave WM_INPUT for the buffered API and dispatch control messages.
-                while (PeekMessageW(&message, nullptr, 0, WM_INPUT - 1, PM_REMOVE) || PeekMessageW(&message, nullptr, WM_INPUT + 1, 0xFFFF, PM_REMOVE)) {
-                    if (message.message == WM_QUIT) {
-                        running = false;
-                        break;
-                    }
-                    DispatchMessageW(&message);
-                }
-
-                if (retry_needed && running) {
-                    Sleep(kMessageLoopRetryDelayMs);
-                }
-            }
+            run_message_loop();
 
             message_thread_id_.store(0, std::memory_order_release);
 
@@ -233,26 +260,23 @@ namespace rawinput {
 
     class LowLatencyMouseMovLifetimeGuard final {
     public:
-        // Start automatically during static initialization.
-        LowLatencyMouseMovLifetimeGuard() noexcept {
-            static bool init = []() -> bool {
-                (void)LowLatencyMouseMov::start_message_thread();
-                return true;
-            }();
-            (void)init;
-        }
+        // The application entry point owns the one-shot input lifetime.
+        LowLatencyMouseMovLifetimeGuard() noexcept
+            : started_(LowLatencyMouseMov::start_message_thread()) {}
 
-        // Stop before static thread storage is destroyed.
+        LowLatencyMouseMovLifetimeGuard(const LowLatencyMouseMovLifetimeGuard&) = delete;
+        LowLatencyMouseMovLifetimeGuard& operator=(const LowLatencyMouseMovLifetimeGuard&) = delete;
+
+        [[nodiscard]] bool started() const noexcept { return started_; }
+
+        // Stop automatically before static thread storage is destroyed.
         ~LowLatencyMouseMovLifetimeGuard() {
-            static bool stop = []() -> bool {
-                (void)LowLatencyMouseMov::stop_message_thread();
-                return true;
-            }();
-            (void)stop;
+            (void)LowLatencyMouseMov::stop_message_thread();
         }
-    };
 
-    inline LowLatencyMouseMovLifetimeGuard mousemov_lifetime_guard;
+    private:
+        const bool started_;
+    };
 
 } // namespace rawinput
 

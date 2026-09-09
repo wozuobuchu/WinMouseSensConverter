@@ -21,6 +21,7 @@
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="input_batch_tests.cpp"><Filter>Source Files</Filter></ClCompile>
     <ClCompile Include="config_tests.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>

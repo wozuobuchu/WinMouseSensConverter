@@ -243,7 +243,7 @@ The input thread registers keyboard and mouse Raw Input to one message-only wind
 
 At each UI polling boundary, keyboard and mouse-button events are applied before the pending mouse snapshot is sampled. Starting recording clears the displayed totals and then attributes that pending snapshot to the new session. Stopping turns recording off before the pending snapshot is drained, so that snapshot is discarded.
 
-Keyboard, mouse-button, and movement reports share one Raw Input drain, but the UI still applies up to 1024 queued key events before sampling the complete pending mouse snapshot. Keep the mouse stationary while pressing the recording key; otherwise movement from the same UI polling interval may fall inside or outside the intended recording interval.
+Keyboard, mouse-button, and movement reports share one Raw Input drain. Key events are queued immediately, while movement is accumulated locally and published at the next input-loop entry, before its wait. The UI applies up to 1024 queued key events before sampling all published movement; the current unpublished batch is not yet visible. Keep the mouse stationary while pressing the recording key; otherwise movement from the same UI polling interval may fall inside or outside the intended recording interval.
 
 #### Sources of measurement error
 
@@ -330,7 +330,8 @@ All relative mouse reports are merged. Keep secondary mice, touchpad emulators, 
 flowchart LR
     Mouse["Mouse HID"] --> InputThread["THREAD_RawInput<br/>message-only window"]
     Keyboard["Keyboard HID"] --> InputThread
-    InputThread -->|"~1 ms, GetRawInputBuffer<br/>64-entry aligned buffer"| Atomic["Packed X/Y<br/>atomic CAS accumulator"]
+    InputThread -->|"~1 ms, GetRawInputBuffer<br/>repeated 64-entry buffer reads"| Batch["Thread-local X/Y batch"]
+    Batch -->|"next loop entry, before wait<br/>one successful CAS per nonzero batch"| Atomic["Packed X/Y<br/>atomic movement accumulator"]
     Atomic -->|"exchange(0)"| Main["Main / UI thread<br/>~8 ms timer"]
     InputThread -->|"normalize and deduplicate<br/>keyboard + mouse buttons"| Queue["Boost.Lockfree SPSC queue<br/>2048 events"]
     Queue -->|"up to 1024 per UI tick"| Main
@@ -346,16 +347,20 @@ flowchart LR
 
 The program has two principal execution contexts:
 
-1. **Combined Raw Input thread** — owns one message-only window registered for keyboard and mouse input, drains relative movement into a packed atomic accumulator, and produces normalized, deduplicated keyboard and mouse-button transitions for one SPSC consumer.
+1. **Combined Raw Input thread** — owns one message-only window registered for keyboard and mouse input, accumulates relative movement locally across buffer reads and publishes the batch into a packed atomic accumulator at the next loop entry, and produces normalized, deduplicated keyboard and mouse-button transitions for one SPSC consumer.
 2. **Main/UI thread** — handles window and modeless-dialog messages, consumes key events then mouse movement on an approximately 8 ms timer, updates shared state, and renders exactly one mode.
 
 The application entry point explicitly starts the input thread once, before loading configuration or creating the main window. A promise/future handshake completes only after keyboard and mouse Raw Input registration succeeds or reports failure. If initialization fails, the application exits silently with code `1`, without reading or writing configuration or retrying. The entry point owns the input lifetime; shutdown posts `WM_QUIT`, joins the thread, unregisters both Raw Input devices, and destroys the message-only window. Menu and paint paths do not perform input-thread joins or other blocking work.
+
+The retained mouse and keyboard headers also require explicit startup: construct a `rawinput::LowLatencyMouseMovLifetimeGuard` or `rawinput::LowLatencyKeyboardLifetimeGuard` in the caller-owned scope and check `started()`. Both guards are non-copyable and stop their input thread when destroyed, matching the combined input guard. Merely including any of the three headers does not start an input thread.
 
 #### Buffered input and concurrency
 
 The named input thread deliberately excludes `WM_INPUT` from its wake mask, waits up to approximately 1 ms so reports can accumulate, and repeatedly drains `GetRawInputBuffer` through a fixed 64-entry, 8-byte-aligned array. Control messages are dispatched separately. A failed wait or buffer drain retries after 1 ms.
 
-Mouse X/Y deltas are packed into one `std::atomic<uint64_t>`. The producer adds each relative packet with a compare-and-swap loop; the UI consumer takes and clears both axes with `exchange(0, std::memory_order_relaxed)`. If CAS races with exchange, it either completes before the snapshot or retries from the cleared state, placing the packet in the current or next snapshot without a producer/consumer update loss. This guarantee does not remove physical, sensor, game, or boundary error.
+The producer sums relative mouse X/Y deltas in a thread-local batch spanning every buffer read in the tick. At the next loop entry, before the 1 ms wait, it merges a nonzero batch into one `std::atomic<uint64_t>` with a relaxed compare-and-swap loop, then clears the local batch. A zero net batch skips atomic operations. Both axes use separate unsigned 32-bit modulo sums, preserving wraparound without signed overflow or carry between axes. Each nonzero batch requires one successful CAS instead of one per packet; contention or spurious failure can still require retries.
+
+The UI consumer takes and clears both published axes with `exchange(0, std::memory_order_relaxed)`. If CAS races with exchange, it either completes before the snapshot or retries using the updated value, placing the entire batch in the current or a later snapshot without a producer/consumer update loss. Already collected movement survives a partial buffer-read failure and is published at the next loop entry. On `WM_QUIT`, the loop exits without publishing its final local batch. The retained, unused `low_latency_mousemov.hpp` uses the same batching behavior. These guarantees do not remove physical, sensor, game, or recording-boundary error.
 
 The keyboard path splits generic Shift, Control, and Alt reports into left/right VK variants and ignores `VKey == 255`. Mouse left, right, middle, XBUTTON1, and XBUTTON2 transitions are converted to `VK_LBUTTON`, `VK_RBUTTON`, `VK_MBUTTON`, `VK_XBUTTON1`, and `VK_XBUTTON2`; vertical and horizontal wheel movement is not enqueued. Keyboard and mouse-button transitions share the same atomic 256-key state table, so unchanged states from either source are suppressed. Generic configured modifier values match either side; side-specific values match only that side. The input thread pushes transitions into a capacity-2048 Boost.Lockfree SPSC queue. The main thread pops at most 1024 per UI tick and toggles only on matching key-down events. If the queue is full, that event is dropped while the key-state table remains current; an extremely overloaded queue can therefore miss a recording toggle.
 
@@ -378,9 +383,9 @@ The UI uses a reusable Windows C++20 header-only component library under `D2DUIL
 | Path | Purpose |
 | --- | --- |
 | `WinMouseSensConverter/WinMouseSensConverter.cpp` | `WinMain`, configuration lifetime, and the main message/consumer loop. |
-| `WinMouseSensConverter/SYS/low_latency_input.hpp` | Combined buffered Raw Input thread, shared key-state table and SPSC event queue, and packed atomic movement accumulator. |
-| `WinMouseSensConverter/SYS/low_latency_mousemov.hpp` | Retained legacy mouse implementation; not included by the application. |
-| `WinMouseSensConverter/SYS/low_latency_keyboard.hpp` | Retained legacy keyboard implementation; not included by the application. |
+| `WinMouseSensConverter/SYS/low_latency_input.hpp` | Combined buffered Raw Input thread, shared key-state table and SPSC event queue, and per-tick movement batch publication. |
+| `WinMouseSensConverter/SYS/low_latency_mousemov.hpp` | Retained legacy mouse implementation with explicit lifetime-guard startup; not included by the application. |
+| `WinMouseSensConverter/SYS/low_latency_keyboard.hpp` | Retained legacy keyboard implementation with explicit lifetime-guard startup; not included by the application. |
 | `WinMouseSensConverter/config.hpp` | Header-only parsing, validation, loading, default recovery, and atomic-style save replacement. |
 | `WinMouseSensConverter/sync.hpp` | Shared `app_data` state and centralized `app_func` recording transitions. |
 | `WinMouseSensConverter/ui.cpp` | Input consumption, recording transitions, lifecycle, menus, dialogs, DPI handling, and timer-gated dispatch. |
@@ -448,7 +453,7 @@ The runner builds by default. Use `-NoBuild` only after the selected configurati
 .\WinMouseSensConverterAutomaticTest\run_tests.ps1 -Configuration Debug -NoBuild
 ```
 
-Tests cover configuration parsing and serialization, recording-state transitions, unit and calibration calculations, component ownership and behavior, the common-plus-one-mode rendering contract, DirectWrite layout reuse, mouse dispatch, and UI input scheduling. Recording-transition tests suppress notification sounds. Rendering tests create only a hidden ordinary test window; they do not create Raw Input threads, access saved user configuration, require physical devices, or start the elevated main executable.
+Tests cover configuration parsing and serialization, recording-state transitions, unit and calibration calculations, component ownership and behavior, the common-plus-one-mode rendering contract, DirectWrite layout reuse, mouse dispatch, and UI input scheduling. Both input implementations are tested for deferred batch publication, publication counts, filtering, cancellation, per-axis wraparound, partial-read recovery, shutdown discard, and concurrent snapshot totals; combined-input tests also check immediate button transitions. Synthetic buffer readers exercise the actual input loops on the test thread without device registration. CAS counters and atomic wrappers live entirely in the test source, with no test macros in production headers. Tests include all three input headers, verify that no Raw Input devices are registered, and check the lifetime guards' ownership and status interfaces at compile time. Recording-transition tests suppress notification sounds. Rendering tests create only a hidden ordinary test window; they do not create Raw Input threads, access saved user configuration, require physical devices, or start the elevated main executable.
 
 #### Contributing
 
@@ -690,7 +695,7 @@ Windows 将 `RAWMOUSE::lLastX` 和 `lLastY` 定义为有符号位移；相对报
 
 每个 UI 轮询边界都会先处理键盘和鼠标按键事件，再提取待处理鼠标快照。开始录制会清空显示累计值，然后把该待处理快照归入新记录；停止录制会先关闭记录，再提取并丢弃该快照。
 
-键盘、鼠标按键和移动报告由同一次 Raw Input 排空处理，但 UI 仍先应用最多 1024 个排队按键事件，再提取完整的待处理鼠标快照。按录制键时应保持鼠标静止，否则同一 UI 轮询区间内的移动可能落在预期录制区间内或区间外。
+键盘、鼠标按键和移动报告由同一次 Raw Input 排空处理。按键事件立即入队，移动则先在本地累计，在下一轮输入循环开始、等待之前发布。UI 先应用最多 1024 个排队按键事件，再提取所有已发布移动；当前尚未发布的批次仍不可见。按录制键时应保持鼠标静止，否则同一 UI 轮询区间内的移动可能落在预期录制区间内或区间外。
 
 #### 测量误差来源
 
@@ -777,7 +782,8 @@ Reference DPI 是数学输入。标称 `800 DPI` 可能偏离有效 CPI，表面
 flowchart LR
     Mouse["鼠标 HID"] --> InputThread["THREAD_RawInput<br/>仅消息窗口"]
     Keyboard["键盘 HID"] --> InputThread
-    InputThread -->|"约 1 ms，GetRawInputBuffer<br/>64 项对齐缓冲区"| Atomic["打包 X/Y<br/>原子 CAS 累加器"]
+    InputThread -->|"约 1 ms，GetRawInputBuffer<br/>反复读取 64 项缓冲区"| Batch["线程局部 X/Y 批次"]
+    Batch -->|"下一轮开始、等待前<br/>每个非零批次一次成功 CAS"| Atomic["打包 X/Y<br/>原子位移累加器"]
     Atomic -->|"exchange(0)"| Main["主/UI 线程<br/>约 8 ms 定时器"]
     InputThread -->|"归一化并去除重复状态<br/>键盘 + 鼠标按键"| Queue["Boost.Lockfree SPSC 队列<br/>2048 个事件"]
     Queue -->|"每个 UI 节拍最多 1024 个"| Main
@@ -793,16 +799,20 @@ flowchart LR
 
 程序有两个主要执行上下文：
 
-1. **合并后的 Raw Input 线程**——拥有一个同时注册键盘和鼠标输入的 message-only window，把相对位移排入打包原子累加器，并为唯一 SPSC 消费者生成归一化且去重的键盘与鼠标按键状态变化。
+1. **合并后的 Raw Input 线程**——拥有一个同时注册键盘和鼠标输入的 message-only window，跨缓冲区读取在本地累计相对位移，并在下一轮循环开始时将该批次发布到打包原子累加器，同时为唯一 SPSC 消费者生成归一化且去重的键盘与鼠标按键状态变化。
 2. **主/UI 线程**——处理窗口和非模态窗口消息，在约 8 ms 定时器上依次消费按键事件和鼠标移动，更新共享状态并只渲染一个模式。
 
 应用入口在加载配置和创建主窗口之前显式启动一次输入线程。promise/future 握手只在键盘和鼠标 Raw Input 注册成功或明确失败后完成。初始化失败时，程序不显示提示，直接以退出码 `1` 退出，不读写配置，也不重试。应用入口管理输入生命周期；退出时发送 `WM_QUIT`、回收线程、注销两个 Raw Input 设备并销毁 message-only window。菜单和绘制路径不会执行输入线程 `join` 或其他阻塞工作。
+
+保留的旧鼠标和旧键盘头文件也采用显式启动：由调用方在其管理的作用域中构造 `rawinput::LowLatencyMouseMovLifetimeGuard` 或 `rawinput::LowLatencyKeyboardLifetimeGuard`，并检查 `started()`。两个守卫均不可复制，析构时停止对应输入线程，与合并输入守卫一致。仅包含三份头文件中的任何一份都不会启动输入线程。
 
 #### 批量输入与并发
 
 已命名的输入线程会从唤醒掩码中排除 `WM_INPUT`，最多等待约 1 ms 让报告聚合，再通过固定 64 项、8 字节对齐数组反复排空 `GetRawInputBuffer`。控制消息单独分派；等待或缓冲区读取失败时会在 1 ms 后重试。
 
-鼠标 X/Y 增量打包在同一个 `std::atomic<uint64_t>` 中。生产者通过 compare-and-swap 循环累加每个相对报告，UI 消费者使用 `exchange(0, std::memory_order_relaxed)` 同时取得并清除两个轴。如果 CAS 与 exchange 竞争，它会在快照前完成，或从已清零状态重试，因此数据包会进入当前或下一快照，不会因生产者/消费者同时更新而丢失。这一保证不能消除物理、传感器、游戏或边界误差。
+生产者在线程局部批次中累计相对鼠标 X/Y 增量，覆盖同一 tick 内的所有缓冲区读取。下一轮循环开始、1 ms 等待之前，通过 relaxed compare-and-swap 循环将非零批次合并到一个 `std::atomic<uint64_t>`，成功后清空局部批次；净位移为零的批次跳过原子操作。两轴分别采用无符号 32 位模运算，保留回绕语义，避免有符号溢出和轴间进位。每个非零批次只需一次成功 CAS，而非每个数据包一次；竞争或伪失败仍可能需要重试。
+
+UI 消费者使用 `exchange(0, std::memory_order_relaxed)` 同时取得并清除已发布的两个轴。如果 CAS 与 exchange 竞争，它会在快照前完成，或使用更新后的值重试，因此整个批次会进入当前或后续快照，不会因生产者/消费者同时更新而丢失。缓冲区读取部分成功后失败时，已采集位移会保留到下一轮循环开始再发布。收到 `WM_QUIT` 后直接退出循环，丢弃最后尚未发布的局部批次，不补交。保留但未使用的 `low_latency_mousemov.hpp` 采用相同批量行为。这些保证不能消除物理、传感器、游戏或录制边界误差。
 
 键盘路径会把通用 Shift、Control、Alt 报告拆分成左右 VK 变体，并忽略 `VKey == 255`。鼠标左键、右键、中键、XBUTTON1 和 XBUTTON2 的状态变化会转换为 `VK_LBUTTON`、`VK_RBUTTON`、`VK_MBUTTON`、`VK_XBUTTON1` 和 `VK_XBUTTON2`；垂直与水平滚轮滚动不会入队。键盘和鼠标按键共用同一个 256 项原子按键状态表，因此两种来源中未发生改变的状态都会被过滤。配置为通用修饰键时匹配任意一侧，配置为左右专用值时只匹配对应侧。输入线程把状态变化推入容量为 2048 的 Boost.Lockfree SPSC 队列；主线程每个 UI 节拍最多取出 1024 个，只在匹配的按下事件上切换录制。如果队列已满，该事件会被丢弃，但按键状态表仍保持最新；极端队列拥塞因此可能漏掉一次录制切换。
 
@@ -825,9 +835,9 @@ Measurement 数值使用三位小数，把换算后绝对值小于 `0.0005` 的�
 | 路径 | 用途 |
 | --- | --- |
 | `WinMouseSensConverter/WinMouseSensConverter.cpp` | `WinMain`、配置生命周期和主消息/消费循环。 |
-| `WinMouseSensConverter/SYS/low_latency_input.hpp` | 合并后的批量 Raw Input 线程、共享按键状态表与 SPSC 事件队列，以及打包原子位移累加器。 |
-| `WinMouseSensConverter/SYS/low_latency_mousemov.hpp` | 保留的旧鼠标实现；应用不再包含。 |
-| `WinMouseSensConverter/SYS/low_latency_keyboard.hpp` | 保留的旧键盘实现；应用不再包含。 |
+| `WinMouseSensConverter/SYS/low_latency_input.hpp` | 合并后的批量 Raw Input 线程、共享按键状态表与 SPSC 事件队列，以及按 tick 发布的位移批次。 |
+| `WinMouseSensConverter/SYS/low_latency_mousemov.hpp` | 保留的旧鼠标实现，通过显式构造生命周期守卫启动；应用不再包含。 |
+| `WinMouseSensConverter/SYS/low_latency_keyboard.hpp` | 保留的旧键盘实现，通过显式构造生命周期守卫启动；应用不再包含。 |
 | `WinMouseSensConverter/config.hpp` | 仅头文件的解析、校验、加载、默认恢复和原子式替换保存。 |
 | `WinMouseSensConverter/sync.hpp` | 共享的 `app_data` 状态和集中式 `app_func` 录制切换逻辑。 |
 | `WinMouseSensConverter/ui.cpp` | 输入消费、录制切换、生命周期、菜单、窗口、DPI 处理和定时器门控分派。 |
@@ -895,7 +905,7 @@ x64\Release\WinMouseSensConverter.exe
 .\WinMouseSensConverterAutomaticTest\run_tests.ps1 -Configuration Debug -NoBuild
 ```
 
-测试覆盖配置解析与序列化、录制状态切换、单位与定标计算、组件所有权与行为、公共队列加一个模式队列的绘制契约、DirectWrite 布局复用、鼠标事件分发和 UI 输入调度。录制切换测试会禁用提示音。渲染测试只创建隐藏的普通测试窗口，不会创建 Raw Input 线程、访问已保存的用户配置、要求真实输入设备或启动需要提权的主程序。
+测试覆盖配置解析与序列化、录制状态切换、单位与定标计算、组件所有权与行为、公共队列加一个模式队列的绘制契约、DirectWrite 布局复用、鼠标事件分发和 UI 输入调度。两份输入实现均覆盖延迟批量发布、提交次数、过滤、抵消、逐轴回绕、部分读取错误恢复、退出丢弃及并发快照总计数；合并输入测试还验证按键状态变化立即入队。合成缓冲区读取器在测试线程上驱动实际输入循环，不注册输入设备。CAS 计数器和原子包装器完全位于测试源码，工程头文件不含测试宏。测试直接包含三份输入头文件，验证没有注册 Raw Input 设备，并在编译时检查生命周期守卫的所有权和状态接口。录制切换测试会禁用提示音。渲染测试只创建隐藏的普通测试窗口，不会创建 Raw Input 线程、访问已保存的用户配置、要求真实输入设备或启动需要提权的主程序。
 
 #### 参与贡献
 

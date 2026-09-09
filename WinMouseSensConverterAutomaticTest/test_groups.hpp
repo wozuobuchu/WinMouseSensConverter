@@ -4,6 +4,7 @@
 
 namespace automatic_test {
 
+    void add_input_batch_tests(TestRunner& runner);
     void add_config_tests(TestRunner& runner);
     void add_core_logic_tests(TestRunner& runner);
     void add_ui_input_tests(TestRunner& runner);
